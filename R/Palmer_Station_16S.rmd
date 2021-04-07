@@ -1,0 +1,2210 @@
+---
+title: "Palmer Station 16S Analysis"
+author: "Codey Phoun"
+date: "4/06/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "F:/bioinformatics/palmer_station")
+getwd()
+```
+
+## Introduction
+
+The marine microbial ecosystem of the waters off the Western Antarctic Peninsula
+(WAP) in the Southern Ocean is inextricably tied to the season. Each spring brings forth a
+phytoplankton bloom and changes in the community composition of the bacteria and other
+microbes in the water. These microbes are the key players in the processes of biogeochemical
+cycling and carbon sequestration. The Southern Ocean has experienced dramatic warming due to
+the effects of anthropogenic climate change and the impact of climate change on the marine
+bacterial community is not fully understood. The Palmer Long Term Ecological Research (PAL LTER) project has been collecting ecological data on the WAP since 1990, but detailed molecular data on this ecosystem is under sampled. Baseline measurements on the taxonomic makeup of the microbial community are needed for future research. Water samples from the surface water of the Western Antarctic Peninsula were collected by Dr. Shellie Bench at Palmer
+Station, over the 2012-2013, 2013-2014, and 2014-2015 summer seasons. This project is focused on the 15 different 16S
+rRNA V4 amplicon libraries generated from the sequencing of these water samples. With this
+data, a metagenomic analysis can help reveal the pattern of changes in the community
+composition of bacteria that are associated to the phytoplankton blooms off the coast of the
+Western Antarctic Peninsula
+
+These 15 reads were previously processed on the SJSU CoS HPC. Quality filtering and primer and adapter removal was performed with Cutadapt. The samples were then imported into QIIME2 for further processing. The 16s libraries were run through DADA2 in QIIME2 to create amplicon sequence variants (ASVs) by denoising and dereplicating paired-end sequences before filtering for chimeras. ASVs were then taxonomically classified with VSEARCH and the SILVA-138 database. A phylogenetic tree was then created by IQ-TREE in QIIME2 for downstream analysis methods that required phylogentic information. 
+
+## Setup
+
+Import libraries
+```{r message = FALSE, warning=FALSE}
+library(tidyverse) # Data processing
+library(ggplot2) # Plot figures
+library(qiime2R) # QIIME2 artifacts to phyloseq object
+library(vegan) # Ecology analysis
+library(phyloseq) # Base microbiome data structure
+library(microbiome) # Microbiome data analysis and visualization
+library(phylosmith) # Microbiome data analysis and visualization
+library(microbiomeutilities) # Microbiome data analysis and visualization
+library(ggordiplots) # Vegan ordination plots for ggplot2
+library(lubridate) # Date formatting
+library(readxl) # Read in excel .xlsx
+library(ggrepel) # Prevent overlapping text in figures
+library(eulerr) # Venn diagram visualization for core microbiome
+library(treemap) # Tree map visualization
+library(ggpubr) # Data visualization - wrapper
+library(rstatix) # Tidy statistical tests
+library(RColorBrewer) # Color selection for graphics
+library(tidytext) # Text repel on graphics 
+library(dendextend) # Dendrogram plotting
+```
+
+Load phyloseq-extended functions
+```{r message = FALSE, warning=FALSE}
+source("https://raw.githubusercontent.com/mahendra-mariadassou/phyloseq-extended/master/load-extra-functions.R")
+```
+
+R Environment Setup
+```{r}
+theme_set(theme_bw()) # set ggplot2 default theme
+set.seed(100) # set seed for reproducibility with RNG functions
+
+```
+
+&nbsp;
+
+## Import Data from QIIME2
+
+Import QIIME2 artifacts produced by the 16s_full_pipeline.sh script to a Phyloseq object called physeq
+```{r}
+physeq <- qza_to_phyloseq(
+    features = "./qiime2/16S_libraries_feature_table_clean.qza", # ASV/OTU table
+    tree = "./phylogeny/16S_libraries_iqtree_rooted.qza", # Phylogenetic tree
+    taxonomy = "./qiime2/16S_libraries_vsearch_taxonomy.qza", # Taxonomy file
+    metadata = "./metadata/16S_metadata.tsv" # Sample metadata
+    )
+```
+
+Initial structure of the Phyloseq object physeq
+```{r}
+physeq
+```
+
+Samples were split into three different summer stages for comparisons requiring categorical variables.
+
+The austral summer in Antarctica lasts from November through March
+
+Early Summer - Late November through Mid January
+
+Mid Summer - Mid January through Mid February
+
+Late Summer - Mid February through March
+
+&nbsp;
+
+Show sample dates and summer stages for each sample
+```{r}
+Sample_Name_Date <- tibble("Sample Name" = sample_names(physeq),
+                           "Sample Date" = physeq@sam_data$lib_date,
+                           "Summer Stage" = physeq@sam_data$Summer_Stage)
+Sample_Name_Date %>%
+  print(n = 15)
+```
+
+```{r}
+table(physeq@sam_data$Summer_Stage)
+```
+
+```{r}
+table(physeq@sam_data$lib_season)
+```
+
+View taxa ranks
+```{r}
+rank_names(physeq)
+```
+
+&nbsp;
+
+## Process and Modify the Phyloseq Object 
+
+Add total read counts to each library's sample data
+```{r}
+sample_data(physeq)$total_reads <- sample_sums(physeq)
+```
+
+Convert "Summer_Stage" from character to an R factor
+```{r}
+physeq@sam_data$Summer_Stage <- factor(physeq@sam_data$Summer_Stage, 
+                                       levels = c("Early Summer", "Mid Summer", "Late Summer"))
+```
+
+Remove d\_\_ prefix from taxa rank Kingdom
+```{r}
+tax_table(physeq)[,1] <- gsub( "d__","", tax_table(physeq)[,1])
+```
+
+Scale and center environmental metadata
+```{r}
+sample_data(physeq)[,6:14] <- scale(sample_data(physeq)[,6:14])
+```
+
+Make vector of the sample collection dates for downstream labeling of libraries
+```{r}
+lib_dates <- as.Date(paste(c(sample_data(physeq)$year), 
+                           c(sample_data(physeq)$month), 
+                           c(sample_data(physeq)$day), 
+                           sep = "-"))
+```
+
+&nbsp;
+
+### Agglomerate taxa on Genus level
+
+Species labels are unreliable and many taxa are labeled as "uncultured" at species level. 
+
+```{r}
+physeq <- physeq %>%
+tax_glom(taxrank = "Genus", NArm = TRUE)
+tax_table(physeq) <- tax_table(physeq)[,1:6] # drop taxa rank Species from tax_table
+```
+
+View physeq after agglomeration
+```{r}
+physeq
+```
+
+2430 species agglomerated to 384 unique genera
+
+### Rarefy to the smallest library size
+
+Rarefaction normalizes for the differences in library sizes/sequencing depth. 
+Historically, it has been widely used but the usefulness is under debate in the literature. 
+
+```{r}
+sample_sums(physeq)
+min(sample_sums(physeq))
+```
+S3L05 has the lowest read count at 192,952 reads. All samples will be rarefied to 192,952.
+
+Rarefy without replacement
+```{r}
+physeq_rarefy <- rarefy_even_depth(physeq, sample.size = min(sample_sums(physeq)),
+                  rngseed = FALSE , replace = FALSE, trimOTUs = TRUE, verbose = FALSE)
+```
+
+Plot a rarefaction curve
+```{r fig.keep = 'last', results = 'hide'}
+rare_plot <- ggrare(physeq, step = 500, label = sample_names(physeq), 
+                    color = "lib_season", parallel = TRUE) +
+             geom_vline(xintercept = min(sample_sums(physeq)), 
+                        linetype="dashed", size = 1) +
+             scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+             scale_x_continuous(breaks = scales::pretty_breaks(n = 7), 
+                                labels = scales::comma,
+                                limits = c(0,700000)) +
+             ylab("Observed Taxa") +
+             guides(color = FALSE) + 
+             labs(fill = "Season")
+rare_plot
+```
+
+Rarefying to the smallest sample size looks to be OK because there is not a large increase in 
+observed taxa (low slope) for each library after rarefying to 192,952.
+
+&nbsp;
+
+## Import the Environmental Metadata
+
+Environmental data collected from Palmer Station Sample Site B at a depth of about 10 meters
+
+http://pal.lternet.edu/data
+
+Helper function to transform the data
+```{r}
+data_transform <- function(df) {
+    df %>%
+    separate("Date", into = c("Year", "Month", "Day"), 
+             remove =  FALSE, convert = TRUE) %>%
+    mutate(year_plot = ifelse(Month >= 10, 2000, # for plotting multiple years
+                  ifelse(Month < 10, 2001, NA))) %>% # onto the same scale
+    mutate(plot_date = make_date(year_plot, Month, Day)) %>%
+    mutate(lib_season = case_when( # add library season to the dataframe
+        (Year == 2012) ~ "12-13",
+        (Year <= 2013 & Month <= 3) ~ "12-13",
+        (Year == 2013 & Month > 3) ~ "13-14",
+        (Year == 2014 & Month <=3) ~ "13-14",
+        (Year == 2014 & Month >3) ~ "14-15",
+        Year == 2015 ~ "14-15",
+        TRUE ~ "none")) %>%
+    mutate(Date = as.Date(Date)) %>%
+    mutate(sample_16s = Date %in% lib_dates) %>% # TRUE/FALSE if date is a 16s library date 
+    mutate(month_day=paste(Month, Day, sep = "-"))
+}
+```
+
+Read in Bacterial Abundance and Bacterial Production data
+```{r}
+bacterial_abundance <- read_excel("./Palmer_Station_Metadata/Bacteria_B.xlsx", na = "-999") %>%
+                       data_transform()
+                       
+head(bacterial_abundance)
+```
+
+Read in Chlorophyll a data
+```{r}
+chlorophyll <- read_excel("./Palmer_Station_Metadata/Chlorophyll_B.xlsx", na = "-999") %>%
+               data_transform()
+
+head(chlorophyll)
+```
+
+Read in Primary Production data
+```{r}
+primary_production <- read_excel("./Palmer_Station_Metadata/Primary_Production_B.xlsx",
+                                  na = "-999" ) %>% 
+                       data_transform()
+
+head(primary_production)
+```
+
+Read in Temperature and Salinity data
+```{r}
+CTD_B <- read_excel("./Palmer_Station_Metadata/CTD_B_downcast_12-15_clean.xlsx") %>% 
+                       data_transform()
+CTD_B
+```
+
+Read in Inorganic Nutrients - Phosphate, Silicate, and the Nitrite and Nitrate data
+```{r}
+inorganic_nutrients <- read_excel("./Palmer_Station_Metadata/Dissolved_Inorganic_Nutrients_B.xlsx",
+                                  na = "-999" ) %>% 
+                       data_transform()
+head(inorganic_nutrients)
+```
+
+Join some of the environmental data to a single data frame
+```{r}
+palmer_env <- full_join(chlorophyll, 
+                        primary_production, 
+                        by = "Date")
+palmer_env <- full_join(palmer_env, 
+                        bacterial_abundance,
+                        by = "Date") %>%
+              data_transform()
+palmer_env$Notes <- NULL
+```
+
+&nbsp;
+
+## Plot and Explore the Environmental Metadata
+
+### Chlorophyll a and Bacterial Production (Leucine Incorporation)
+
+```{r}
+env_12_13 <- ggplot(na.omit(subset(palmer_env, lib_season %in% c("12-13"))), 
+              aes(x = Date)) +
+              geom_line(aes(y = `Chlorophyll (mg/m³)`, 
+                            color = "Chlorophyll (mg/m³)"), 
+                            size = 1.05, alpha = 0.75,) +
+              geom_line(aes(y = `Leucine Incorp. (pmol/L/hr)`/5, 
+                            color = "Leucine Incorp. (pmol/L/hr)"),
+                            size = 1.05, alpha = 0.75) +
+              scale_x_date(date_breaks = "months", date_labels = "%b", 
+                           limits = as.Date(c('2012-10-31','2013-03-21')), expand = c(0,0),
+                           sec.axis = sec_axis(~., breaks = lib_dates[1:2], 
+                                               labels = scales::date_format("%m/%d"))) + 
+              labs(title = "2012-2013") +
+              scale_y_continuous(breaks = scales::pretty_breaks(n = 5), limits = c(0,36), 
+                                 sec.axis = sec_axis(~ .*5, name = "Leucine Incorp. (pmol/L/hr)", 
+                                                     breaks = scales::pretty_breaks(n = 5) )) +
+              theme(axis.title.y = element_blank(),
+                    axis.title.x = element_blank(),
+                    legend.title = element_blank()) +
+              geom_vline(xintercept = as.numeric(lib_dates[1:2]), linetype = 4) +
+              scale_color_manual(values = c("#00BA38", "#619CFF"))
+```
+
+```{r}
+env_13_14 <- ggplot(na.omit(subset(palmer_env, lib_season %in% c("13-14"))), 
+              aes(x = Date)) +
+              geom_line(aes(y = `Chlorophyll (mg/m³)`, 
+                            color = "Chlorophyll (mg/m³)"), 
+                            size = 1.05, alpha = 0.75,) +
+              geom_line(aes(y = `Leucine Incorp. (pmol/L/hr)`/5, 
+                            color = "Leucine Incorp. (pmol/L/hr)"), 
+                            size = 1.05, alpha = 0.75) +
+              scale_x_date(date_breaks = "months", date_labels = "%b", 
+                           limits = as.Date(c('2013-10-31','2014-03-21')), expand = c(0,0),
+                           sec.axis = sec_axis(~., breaks = lib_dates[3:8], 
+                                               labels = scales::date_format("%m/%d"))) + 
+              labs(title = "2013-2014") +
+              scale_y_continuous(breaks = scales::pretty_breaks(n = 5), limits = c(0,36), 
+                                 sec.axis = sec_axis(~ .*5, name = "Leucine Incorp. (pmol/L/hr)", 
+                                                     breaks = scales::pretty_breaks(n = 5) )) +
+              theme(axis.title.y = element_blank(),
+                    axis.title.x = element_blank(),
+                    legend.title = element_blank()) +
+              geom_vline(xintercept=as.numeric(lib_dates[3:8]), linetype = 4) +
+              scale_color_manual(values = c("#00BA38", "#619CFF"))
+```
+
+```{r}
+env_14_15 <- ggplot(na.omit(subset(palmer_env, lib_season %in% c("14-15"))), 
+              aes(x = Date)) +
+              geom_line(aes(y = `Chlorophyll (mg/m³)`, 
+                            color = "Chlorophyll (mg/m³)"), 
+                            size = 1.05, alpha = 0.75,) +
+              geom_line(aes(y = `Leucine Incorp. (pmol/L/hr)`/5, 
+                            color = "Leucine Incorp. (pmol/L/hr)"),
+                            size = 1.05, alpha = 0.75) +
+              scale_x_date(date_breaks="months", date_labels="%b", 
+                           limits = as.Date(c('2014-10-31','2015-03-21')), expand = c(0,0),
+                           sec.axis = sec_axis(~., breaks = lib_dates[9:15], 
+                                               labels = scales::date_format("%m/%d"))) + 
+              labs(title = "2014-2015") +
+              scale_y_continuous(breaks = scales::pretty_breaks(n = 5), limits = c(0,36), 
+                                 sec.axis = sec_axis(~ .*5, name = "Leucine Incorp. (pmol/L/hr)", 
+                                                     breaks = scales::pretty_breaks(n = 5) )) +
+              theme(axis.title.y = element_blank(),
+                    axis.title.x = element_blank(),
+                    legend.title = element_blank()) +
+              geom_vline(xintercept=as.numeric(lib_dates[9:15]), linetype=4) +
+              scale_color_manual(values = c("#00BA38", "#619CFF"))
+```
+
+Dotted vertical lines with dates indicates a 16S sampling date
+
+```{r fig.width=14, fig.height=6}
+env_fig <- ggarrange(env_12_13, env_13_14, env_14_15,
+                     ncol = 1, 
+                     common.legend = TRUE,
+                     label.y = "Chlorophyll (mg/m³)",
+                     legend = "bottom")
+annotate_figure(env_fig,
+                left = text_grob("Chlorophyll (mg/m³)", rot = 90),
+                right = text_grob("Leucine Incorporation (pmol/L/hr)", rot = 270))
+```
+
+Bacterial Abundance
+
+```{r}
+bac_abund <- ggplot(bacterial_abundance, 
+              aes(x = plot_date, y = `Abundance (num/L)`, 
+              group = factor(lib_season), color = factor(lib_season))) +
+              geom_line(size = 1, alpha = .75) +
+              geom_point(size = 1.25, alpha = .75) +
+              scale_x_date(date_breaks = "months", date_labels = "%b",
+                           limits = as.Date(c('2000-10-31','2001-03-25')), 
+                           expand = c(0,0)) + 
+              labs(title = "Bacterial Abundance", x ="Month", color = "Season") +
+              scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+              theme(axis.title.y = element_text(margin = margin(r = 15)),
+                    axis.title.x = element_blank()) +
+              geom_point(data = filter(bacterial_abundance, sample_16s == TRUE), 
+                         aes(x = plot_date, y = `Abundance (num/L)`), 
+                         pch = 18, size = 3.5, alpha = .85)
+```
+
+```{r include=FALSE}
+ggplot(subset(bacterial_abundance, lib_season %in% c("12-13")), 
+    aes(x = Date, y = `Abundance (num/L)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2012-10-25','2013-04-01'))) + 
+    labs(title = "Season 12-13 Bacterial Abundance", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(bacterial_abundance, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(x = Date, y = `Abundance (num/L)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(label = month_day), box.padding = 1, force = 5, nudge_x = 10)
+```
+
+```{r include=FALSE}
+ggplot(subset(bacterial_abundance, lib_season %in% c("13-14")), 
+    aes(x = Date, y = `Abundance (num/L)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2013-12-01','2014-04-01'))) + 
+    labs(title = "Season 13-14 Bacterial Abundance", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(bacterial_abundance, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(x = Date, y = `Abundance (num/L)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(label = month_day), box.padding = 1, force = 9)
+```
+
+```{r include=FALSE}
+ggplot(subset(bacterial_abundance, lib_season %in% c("14-15")), 
+    aes(x = Date, y = `Abundance (num/L)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2014-11-01','2015-04-01'))) + 
+    labs(title = "Season 14-15 Bacterial Abundance", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(bacterial_abundance, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(x = Date, y = `Abundance (num/L)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("14-15")), sample_16s==TRUE)[1:3,], 
+               aes(label = month_day), nudge_x = -1) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("14-15")), sample_16s==TRUE)[4,], 
+               aes(label = month_day), nudge_x = 3) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("14-15")), sample_16s==TRUE)[5:7,], 
+               aes(label = month_day), nudge_y = 1000000)
+```
+
+Bacterial Production
+
+```{r warning=FALSE}
+bac_prod <- ggplot(bacterial_abundance, 
+              aes(x = plot_date, y = `Leucine Incorp. (pmol/L/hr)`, 
+              group = factor(lib_season), color = factor(lib_season))) +
+              geom_line(size = 1, alpha = .75) +
+              geom_point(size = 1.25, alpha = .75) +
+              scale_x_date(date_breaks = "months", date_labels = "%b",
+                           limits = as.Date(c('2000-10-31','2001-03-25')), 
+                           expand = c(0,0)) + 
+              labs(title = "Bacterial Production", x ="Month", color = "Season") +
+              scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+              theme(axis.title.y = element_text(margin = margin(r = 15)),
+                    axis.title.x = element_blank()) +
+              geom_point(data = filter(bacterial_abundance, sample_16s == TRUE), 
+                         aes(x = plot_date, y = `Leucine Incorp. (pmol/L/hr)`), 
+                         pch = 18, size = 3.5, alpha = .85)
+```
+
+```{r include=FALSE}
+ggplot(subset(bacterial_abundance, lib_season %in% c("12-13")), 
+    aes(x = Date, y = `Leucine Incorp. (pmol/L/hr)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2012-10-25','2013-04-01'))) + 
+    labs(title = "Season 12-13 Bacterial Production", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(bacterial_abundance, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(x = Date, y = `Leucine Incorp. (pmol/L/hr)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(label = month_day), box.padding = 1, force = 5, nudge_x = 10, nudge_y = -5)
+```
+
+```{r include=FALSE}
+ggplot(subset(bacterial_abundance, lib_season %in% c("13-14")), 
+    aes(x = Date, y = `Leucine Incorp. (pmol/L/hr)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2013-12-20','2014-04-01'))) + 
+    labs(title = "Season 13-14 Bacterial Production", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(bacterial_abundance, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(x = Date, y = `Leucine Incorp. (pmol/L/hr)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(label = month_day))
+```
+
+```{r include=FALSE}
+ggplot(subset(bacterial_abundance, lib_season %in% c("14-15")), 
+    aes(x = Date, y = `Leucine Incorp. (pmol/L/hr)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2014-11-01','2015-04-01'))) + 
+    labs(title = "Season 14-15 Bacterial Production", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(bacterial_abundance, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(x = Date, y = `Leucine Incorp. (pmol/L/hr)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("14-15")), sample_16s==TRUE)[1:2,], 
+               aes(label = month_day), box.padding = .65, nudge_x = -1, nudge_y = 1) +
+    geom_text_repel(data = filter(subset(bacterial_abundance, lib_season %in% c("14-15")), sample_16s==TRUE)[3:7,], 
+               aes(label = month_day), box.padding = .75, nudge_x = 2, nudge_y = 1.5)
+```
+
+### Bacterial Abundance and Production
+
+Diamonds indicates a 16s sample date
+
+```{r warning=FALSE}
+ggarrange(bac_abund, 
+          bac_prod, 
+          ncol = 1, 
+          common.legend = TRUE, 
+          legend = "bottom",
+          align = "v")
+```
+
+Chlorophyll
+
+```{r warning=FALSE}
+chlor <- ggplot(chlorophyll, 
+          aes(x = plot_date, y = `Chlorophyll (mg/m³)`, 
+          group = factor(lib_season), color = factor(lib_season))) +
+          geom_line(size = 1, alpha = .75) +
+          geom_point(size = 1.25, alpha = .75) +
+          scale_x_date(date_breaks = "months", date_labels = "%b",
+                       limits = as.Date(c('2000-10-31','2001-03-25')), 
+                       expand = c(0,0)) + 
+          labs(title = "Chlorophyll a", x ="Month", color = "Season") +
+          scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+          theme(axis.title.y = element_text(margin = margin(r = 15)),
+                axis.title.x = element_blank()) +
+          geom_point(data = filter(chlorophyll, sample_16s == TRUE), 
+                     aes(x = plot_date, y = `Chlorophyll (mg/m³)`), 
+                     pch = 18, size = 3.5, alpha = .85)
+```
+
+```{r include=FALSE}
+ggplot(subset(chlorophyll, lib_season %in% c("12-13")), 
+    aes(x = Date, y = `Chlorophyll (mg/m³)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2012-10-25','2013-04-01'))) + 
+    labs(title = "Season 12-13 Chlorophyll a", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(chlorophyll, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(x = Date, y = `Chlorophyll (mg/m³)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(chlorophyll, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(label = month_day), box.padding = .5, nudge_x = -2, nudge_y = 1)
+```
+
+```{r include=FALSE}
+ggplot(subset(chlorophyll, lib_season %in% c("13-14")), 
+    aes(x = Date, y = `Chlorophyll (mg/m³)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2013-12-20','2014-04-01'))) + 
+    labs(title = "Season 13-14 Chlorophyll a", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(chlorophyll, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(x = Date, y = `Chlorophyll (mg/m³)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(chlorophyll, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(label = month_day))
+```
+
+```{r include=FALSE}
+ggplot(subset(chlorophyll, lib_season %in% c("14-15")), 
+    aes(x = Date, y = `Chlorophyll (mg/m³)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2014-11-01','2015-04-01'))) + 
+    labs(title = "Season 14-15 Chlorophyll a", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(chlorophyll, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(x = Date, y = `Chlorophyll (mg/m³)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(chlorophyll, lib_season %in% c("14-15")), sample_16s==TRUE)[1:2,], 
+               aes(label = month_day), nudge_y = .5) +
+    geom_text_repel(data = filter(subset(chlorophyll, lib_season %in% c("14-15")), sample_16s==TRUE)[3:7,], 
+               aes(label = month_day))
+```
+
+Primary Production
+
+```{r}
+prim_prod <- ggplot(primary_production, 
+              aes(x = plot_date, y = `Primary Prod. (mg/m³/day)`, 
+              group = factor(lib_season), color = factor(lib_season))) +
+              geom_line(size = 1, alpha = .75) +
+              geom_point(size = 1.25, alpha = .75) +
+              scale_x_date(date_breaks = "months", date_labels = "%b",
+                           limits = as.Date(c('2000-10-31','2001-03-25')), 
+                           expand = c(0,0)) + 
+              labs(title = "Primary Production", x ="Month", color = "Season") +
+              scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+              theme(axis.title.y = element_text(margin = margin(r = 15)),
+                    axis.title.x = element_blank()) +
+              geom_point(data = filter(primary_production, sample_16s == TRUE), 
+                         aes(x = plot_date, y = `Primary Prod. (mg/m³/day)`), 
+                         pch = 18, size = 3.5, alpha = .85)
+```
+
+```{r include=FALSE}
+ggplot(subset(primary_production, lib_season %in% c("12-13")), 
+    aes(x = Date, y = `Primary Prod. (mg/m³/day)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2012-10-25','2013-04-01'))) + 
+    labs(title = "Season 12-13 Primary Production", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(primary_production, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(x = Date, y = `Primary Prod. (mg/m³/day)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(primary_production, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(label = month_day), box.padding = .5, nudge_x = -2, nudge_y = 1)
+```
+
+```{r include=FALSE}
+ggplot(subset(primary_production, lib_season %in% c("13-14")), 
+    aes(x = Date, y = `Primary Prod. (mg/m³/day)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2013-12-20','2014-04-01'))) + 
+    labs(title = "Season 13-14 Primary Production", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(primary_production, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(x = Date, y = `Primary Prod. (mg/m³/day)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(primary_production, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(label = month_day))
+```
+
+```{r include=FALSE}
+ggplot(subset(primary_production, lib_season %in% c("14-15")), 
+    aes(x = Date, y = `Primary Prod. (mg/m³/day)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2014-11-01','2015-04-01'))) + 
+    labs(title = "Season 14-15 Primary Production", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(primary_production, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(x = Date, y = `Primary Prod. (mg/m³/day)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(primary_production, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(label = month_day), box.padding = .5, nudge_x = -2, nudge_y = 1)
+```
+
+### Chlorophyll a and Primary Production
+
+```{r warning=FALSE}
+ggarrange(chlor, 
+          prim_prod, 
+          ncol = 1, 
+          common.legend = TRUE, 
+          legend = "bottom",
+          align = "v")
+```
+
+Water Temperature
+
+```{r}
+temp <- ggplot(CTD_B, 
+          aes(x = plot_date, y = `Temperature (°C)`, 
+          group = factor(lib_season), color = factor(lib_season))) +
+          geom_line(size = 1, alpha = .75) +
+          geom_point(size = 1.25, alpha = .75) +
+          scale_x_date(date_breaks = "months", date_labels = "%b",
+                       limits = as.Date(c('2000-10-31','2001-03-25')), 
+                       expand = c(0,0)) + 
+          labs(title = "Water Temperature", x ="Month", color = "Season") +
+          scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(-2, 2.5)) +
+          theme(axis.title.y = element_text(margin = margin(r = 15)),
+                axis.title.x = element_blank()) +
+          geom_point(data = filter(CTD_B, sample_16s == TRUE), 
+                     aes(x = plot_date, y = `Temperature (°C)`), 
+                     pch = 18, size = 3.5, alpha = .85)
+```
+
+```{r include=FALSE}
+ggplot(subset(CTD_B, lib_season %in% c("12-13")), 
+    aes(x = Date, y = `Temperature (°C)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2012-10-25','2013-04-01'))) + 
+    labs(title = "Season 12-13 Water Temperature", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(-2, 2.5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(CTD_B, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(x = Date, y = `Temperature (°C)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(CTD_B, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(label = month_day), nudge_x = -.5, nudge_y = .5)
+```
+
+```{r include=FALSE}
+ggplot(subset(CTD_B, lib_season %in% c("13-14")), 
+    aes(x = Date, y = `Temperature (°C)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2013-12-01','2014-04-01'))) + 
+    labs(title = "Season 13-14 Water Temperature", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(-2, 2.5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(CTD_B, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(x = Date, y = `Temperature (°C)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(CTD_B, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(label = month_day), nudge_x = -1)
+```
+
+```{r include=FALSE}
+ggplot(subset(CTD_B, lib_season %in% c("14-15")), 
+    aes(x = Date, y = `Temperature (°C)`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2014-11-01','2015-04-01'))) + 
+    labs(title = "Season 14-15 Water Temperature", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(-2, 2.5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(CTD_B, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(x = Date, y = `Temperature (°C)`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(CTD_B, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(label = month_day))
+```
+
+Water Salinity
+
+```{r}
+sal <- ggplot(CTD_B, 
+        aes(x = plot_date, y = `Salinity`, 
+        group = factor(lib_season), color = factor(lib_season))) +
+        geom_line(size = 1, alpha = .75) +
+        geom_point(size = 1.25, alpha = .75) +
+        scale_x_date(date_breaks = "months", date_labels = "%b",
+                     limits = as.Date(c('2000-10-31','2001-03-25')), 
+                     expand = c(0,0)) + 
+        labs(title = "Water Salinity", x ="Month", color = "Season") +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(32.5, 34.5)) +
+        theme(axis.title.y = element_text(margin = margin(r = 15)),
+              axis.title.x = element_blank()) +
+        geom_point(data = filter(CTD_B, sample_16s == TRUE), 
+                   aes(x = plot_date, y = `Salinity`), 
+                   pch = 18, size = 3.5, alpha = .85)
+```
+
+```{r include=FALSE}
+ggplot(subset(CTD_B, lib_season %in% c("12-13")), 
+    aes(x = Date, y = `Salinity`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2012-10-25','2013-04-01'))) + 
+    labs(title = "Season 12-13 Water Salinity", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(32.5, 34.5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(CTD_B, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(x = Date, y = `Salinity`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(CTD_B, lib_season %in% c("12-13")), sample_16s==TRUE), 
+               aes(label = month_day), nudge_y = -.1)
+```
+
+```{r include=FALSE}
+ggplot(subset(CTD_B, lib_season %in% c("13-14")), 
+    aes(x = Date, y = `Salinity`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2013-12-01','2014-04-01'))) + 
+    labs(title = "Season 13-14 Water Salinity", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(32.5, 34.5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(CTD_B, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(x = Date, y = `Salinity`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(CTD_B, lib_season %in% c("13-14")), sample_16s==TRUE), 
+               aes(label = month_day), nudge_x = -1)
+```
+
+```{r include=FALSE}
+ggplot(subset(CTD_B, lib_season %in% c("14-15")), 
+    aes(x = Date, y = `Salinity`)) +
+    geom_line(size = 1.05, alpha = 0.75) +
+    geom_point(size = 1.75, alpha = 0.75) +
+    scale_x_date(date_breaks="months", date_labels="%b", limits = as.Date(c('2014-11-01','2015-04-01'))) + 
+    labs(title = "Season 14-15 Water Salinity", x ="Month") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(32.5, 34.5)) +
+    theme(axis.title.y = element_text(margin = margin(r = 15))) +
+    geom_point(data = filter(subset(CTD_B, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(x = Date, y = `Salinity`), 
+               col = "red", size = 3, pch = 18) +
+    geom_text_repel(data = filter(subset(CTD_B, lib_season %in% c("14-15")), sample_16s==TRUE), 
+               aes(label = month_day))
+```
+
+### Water Temperature and Salinity from CTD
+
+```{r warning=FALSE}
+ggarrange(temp, 
+          sal, 
+          ncol = 1, 
+          common.legend = TRUE, 
+          legend = "bottom",
+          align = "v")
+```
+
+Phosphate
+
+```{r warning=FALSE}
+phos <- ggplot(na.omit(inorganic_nutrients), 
+          aes(x = plot_date, y = `Phosphate (µmol/L)`, 
+          group = factor(lib_season), color = factor(lib_season))) +
+          geom_line(size = 1, alpha = .75) +
+          geom_point(size = 1.25, alpha = .75) +
+          scale_x_date(date_breaks = "months", date_labels = "%b",
+                       limits = as.Date(c('2000-10-31','2001-03-25')), 
+                       expand = c(0,0)) + 
+          labs(title = "Inorganic Nutrients - Phosphate", x ="Month", color = "Season") +
+          scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+          theme(axis.title.y = element_text(margin = margin(r = 15)),
+                axis.title.x = element_blank()) +
+          geom_point(data = filter(inorganic_nutrients, sample_16s == TRUE), 
+                     aes(x = plot_date, y = `Phosphate (µmol/L)`), 
+                     pch = 18, size = 3.5, alpha = .85)
+```
+
+Silicate
+
+```{r}
+sil <- ggplot(inorganic_nutrients, 
+        aes(x = plot_date, y = `Silicate (µmol/L)`, 
+        group = factor(lib_season), color = factor(lib_season))) +
+        geom_line(size = 1, alpha = .75) +
+        geom_point(size = 1.25, alpha = .75) +
+        scale_x_date(date_breaks = "months", date_labels = "%b",
+                     limits = as.Date(c('2000-10-31','2001-03-25')), 
+                     expand = c(0,0)) + 
+        labs(title = "Inorganic Nutrients - Silicate", x ="Month", color = "Season") +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+        theme(axis.title.y = element_text(margin = margin(r = 15)),
+              axis.title.x = element_blank()) +
+        geom_point(data = filter(inorganic_nutrients, sample_16s == TRUE), 
+                   aes(x = plot_date, y = `Silicate (µmol/L)`), 
+                   pch = 18, size = 3.5, alpha = .85)
+```
+
+Nitrite and Nitrate
+
+```{r}
+nn <- ggplot(inorganic_nutrients, 
+        aes(x = plot_date, y = `Nitrite and Nitrate (µmol/L)`, 
+        group = factor(lib_season), color = factor(lib_season))) +
+        geom_line(size = 1, alpha = .75) +
+        geom_point(size = 1.25, alpha = .75) +
+        scale_x_date(date_breaks = "months", date_labels = "%b",
+                     limits = as.Date(c('2000-10-31','2001-03-25')), 
+                     expand = c(0,0)) + 
+        labs(title = "Inorganic Nutrients - Nitrite and Nitrate", x ="Month", color = "Season") +
+        scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+        theme(axis.title.y = element_text(margin = margin(r = 15)),
+              axis.title.x = element_blank()) +
+        geom_point(data = filter(inorganic_nutrients, sample_16s == TRUE), 
+                   aes(x = plot_date, y = `Nitrite and Nitrate (µmol/L)`), 
+                   pch = 18, size = 3.5, alpha = .85)
+```
+
+### Inorganic Nutrients: Phosphate, Silicate, and Nitrite and Nitrate
+```{r warning=FALSE}
+ggarrange(phos, 
+          sil,
+          nn,
+          ncol = 1, 
+          common.legend = TRUE, 
+          legend = "bottom",
+          align = "v")
+```
+
+&nbsp;
+
+## Alpha Diversity: Within Sample Richness and Evenness
+
+Observed Taxa:
+
+Number of observed taxa at genus level (richness estimate)
+
+&nbsp;
+
+Chao1 Index:
+
+Predicted number of taxa in a sample by extrapolating out the number of rare organisms 
+that may have been missed due to undersampling (richness estimate)
+
+&nbsp;
+
+Shannon Diversity:
+
+Estimator of species richness and species evenness: more weight on species richness
+Measures the average degree of uncertainty in predicting where individual species chosen at random will belong
+
+&nbsp;
+
+Inverse Simpson:
+
+Estimator of species richness and species evenness:  more weight on species evenness
+Takes into account both species richness, and an evenness of abundance among the species present
+Measures the probability that two individuals randomly selected from an area will belong to the same species
+
+Alpha diversity descriptions from:
+
+Kim BR, Shin J, Guevarra R, Lee JH, Kim DW, Seol KH, Lee JH, Kim HB, Isaacson R. Deciphering Diversity Indices for a Better Understanding of Microbial Communities. J Microbiol Biotechnol. 2017 Dec 28;27(12):2089-2093. doi: 10.4014/jmb.1709.09027. PMID: 29032640.
+
+&nbsp;
+
+Prepare a data frame with the samples and their alpha diversity measures
+```{r results='hide', message=FALSE}
+# Calculate alpha diversity metrics
+physeq_alpha_div <- microbiome::alpha(physeq_rarefy, index = "all")
+
+# separate out the metadata from physeq
+physeq_meta <- meta(physeq_rarefy)
+
+# add the sample names for merging
+physeq_meta$sample_name <- rownames(physeq_meta)
+
+# add the sample names to diversity results
+physeq_alpha_div$sample_name <- rownames(physeq_alpha_div)
+
+# merge
+physeq_alpha_div <- merge(physeq_alpha_div,physeq_meta, by = "sample_name")
+```
+
+Plot observed taxa, Chao1, Shannon, and Inverse Simpson measures for each sample
+```{r}
+plot_richness(physeq_rarefy, measures = c("Observed", "Chao1", "Shannon", "InvSimpson"), 
+              nrow = 4, color = "Summer_Stage") +
+theme(axis.text.x = element_text(angle = 60, face = "plain", hjust = .5, vjust = .5, size = 10,)) +
+scale_x_discrete(labels = lib_dates) + 
+labs(color = "Summer Stage")
+```
+
+The different alpha diversity measures shows (mostly) the same pattern across the samples.
+
+### Statistical Testing
+
+Group Comparison:
+
+Kruskal-Wallis rank sum test is a nonparametric alternative to ANOVA which checks the null hypothesis of whether all groups come from populations with the same median
+
+Pairwise Comparison:
+
+Wilcoxon rank sum test is a nonparametric alternative to two sample t-test which checks the null hypothesis of whether the two groups come from populations with the same median
+
+&nbsp;
+
+Observed Taxa
+```{r}
+# create boxplot for graphing later
+stat_test <- physeq_alpha_div %>% 
+  wilcox_test(observed ~ Summer_Stage, p.adjust.method = "fdr") %>% 
+  add_xy_position(x = "Summer_Stage")
+
+alpha_obs <- ggboxplot(physeq_alpha_div, 
+  x = "Summer_Stage", 
+  y = "observed",
+  color = "Summer_Stage", 
+  palette = c("#F8766D", "#00BA38","#619CFF"),
+  legend = "none",
+  add = "jitter") + 
+  stat_compare_means(label.y = 250, label.x = .8) +
+  stat_pvalue_manual(stat_test, label = "p.adj", step.increase = .075) +
+  ylab("Observed Taxa") +
+  xlab("") +
+  labs(color = "Summer Stage")
+```
+
+Perform Kruskal-Wallis rank sum test on the observed taxa by the different summer stages
+
+```{r}
+kruskal.test(observed ~ Summer_Stage, data = physeq_alpha_div)
+```
+
+```{r warning=FALSE}
+pairwise.wilcox.test(physeq_alpha_div$observed, physeq_alpha_div$Summer_Stage,
+                 p.adjust.method = "fdr")
+```
+Kruskal-Wallis results indicate a difference in the median observed taxa between the 3 groups.
+Wilcox test shows strong evidence for difference in median observed taxa in Mid Summer and Late Summer.
+
+&nbsp;
+
+Chao1 Index
+```{r}
+# create boxplot for graphing later
+stat_test <- physeq_alpha_div %>% 
+  wilcox_test(chao1 ~ Summer_Stage, p.adjust.method = "fdr") %>% 
+  add_xy_position(x = "Summer_Stage")
+
+alpha_Chao1 <- ggboxplot(physeq_alpha_div, 
+  x = "Summer_Stage", 
+  y = "chao1",
+  color = "Summer_Stage", 
+  palette = c("#F8766D", "#00BA38","#619CFF"),
+  legend = "none",
+  add = "jitter") + 
+  stat_compare_means(label.y = 250, label.x = .8) +
+  stat_pvalue_manual(stat_test, label = "p.adj", step.increase = .075) +
+  ylab("Chao1 Index") +
+  xlab("") +
+  labs(color = "Summer Stage")
+```
+
+```{r}
+kruskal.test(chao1 ~ Summer_Stage, data = physeq_alpha_div)
+```
+
+```{r}
+pairwise.wilcox.test(physeq_alpha_div$chao1, physeq_alpha_div$Summer_Stage,
+                 p.adjust.method = "fdr")
+```
+
+Kruskal-Wallis results indicate a difference in the median Chao1 index between the 3 groups.
+Wilcox test shows strong evidence for difference in median Chao1 index in Mid Summer and Late Summer.
+
+
+&nbsp;
+
+Shannon Diversity
+```{r}
+# create boxplot for graphing later
+stat_test <- physeq_alpha_div %>% 
+  wilcox_test(diversity_shannon ~ Summer_Stage, p.adjust.method = "fdr") %>%
+  add_xy_position(x = "Summer_Stage")
+
+alpha_shannon <- ggboxplot(physeq_alpha_div, 
+  x = "Summer_Stage", 
+  y = "diversity_shannon",
+  color = "Summer_Stage", 
+  palette = c("#F8766D", "#00BA38","#619CFF"),
+  legend = "none",
+  add = "jitter") + 
+  stat_compare_means(label.y = 4, label.x = .8) +
+  stat_pvalue_manual(stat_test, label = "p.adj", step.increase = .05) +
+  ylab("Shannon Diversity") +
+  xlab("") +
+  labs(color = "Summer Stage")
+```
+
+```{r}
+kruskal.test(diversity_shannon ~ Summer_Stage, data = physeq_alpha_div)
+```
+
+```{r}
+pairwise.wilcox.test(physeq_alpha_div$diversity_shannon, physeq_alpha_div$Summer_Stage,
+                 p.adjust.method = "fdr")
+```
+
+Kruskal-Wallis on Simpson Diversity shows that there is a significant difference between the summer groups.
+Pairwise comparison with Wilcoxon Rank Sum Test after FDR correction shows both Early Summer - Late Summer and Mid Summer - Late Summer comparisons with with p-values under .05. 
+
+&nbsp;
+
+Inverse Simpson Diversity
+```{r}
+# create boxplot for graphing later
+stat_test <- physeq_alpha_div %>% 
+  wilcox_test(diversity_inverse_simpson ~ Summer_Stage, p.adjust.method = "fdr") %>% 
+  add_xy_position(x = "Summer_Stage")
+
+alpha_simpson <- ggboxplot(physeq_alpha_div, 
+  x = "Summer_Stage", 
+  y = "diversity_inverse_simpson",
+  color = "Summer_Stage", 
+  palette = c("#F8766D", "#00BA38","#619CFF"),
+  legend = "none",
+  add = "jitter") + 
+  stat_compare_means(label.y = 20, label.x = .8) +
+  stat_pvalue_manual(stat_test, label = "p.adj") +
+  ylab("Inverse Simpson Diversity") +
+  xlab("") +
+  labs(color = "Summer Stage")
+```
+
+```{r}
+kruskal.test(diversity_inverse_simpson ~ Summer_Stage, data = physeq_alpha_div)
+```
+
+```{r}
+pairwise.wilcox.test(physeq_alpha_div$diversity_inverse_simpson, physeq_alpha_div$Summer_Stage,
+                 p.adjust.method = "fdr")
+```
+
+Kruskal-Wallis on Inverse Simpson Diversity shows that there is a significant difference between the summer groups.
+Pairwise comparison with Wilcoxon Rank Sum Test after FDR correction does not show a p-value under
+.05 for any pairs. 
+
+&nbsp;
+
+Graph all alpha diversity boxplots with their associated Kruskal-Wallis and Wilcoxon P-values
+```{r fig.width=10, fig.height=8}
+ggarrange(alpha_obs, alpha_Chao1, alpha_shannon, alpha_simpson,
+          common.legend = TRUE, legend = "bottom", align = "hv")
+```
+
+The test on richness estimators, observed taxa and Chao1 index, shows strong evidence for difference in median richness among the 3 summer stages. Mid Summer to Late Summer have significant differences in median values.  
+
+Richness and evenness measures, Shannon diversity and Inverse Simpson diversity, also have significant differences in median diversity measures among the three summer stages. Only tests with Shannon diversity shows p-values under 0.05 for differences between Early Summer - Late Summer and Mid Summer - Late Summer. 
+
+None of the tests show significant differences between Early Summer and Mid Summer. Throughout the Antarctic summer, alpha diversity indices increase over time.
+
+&nbsp;
+
+## Taxa Composition
+
+### Tree Map
+
+```{r warning=FALSE}
+physeq@sam_data$merge <- "merge"
+physeq_order_other <- physeq %>%
+  merge_samples("merge") %>%
+  tax_glom(taxrank = "Order") %>%   
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt()
+```
+
+```{r warning=FALSE, fig.width=10, fig.height=6}
+treemap(physeq_order_other, 
+        index = c("Class", "Order"), 
+        vSize = "Abundance",
+        align.labels=list(c("left", "top"), c("center", "center")),
+        fontsize.labels=c(12, 9),                
+        fontcolor.labels=c("black"),    
+        bg.labels = "transparent",
+        lowerbound.cex.labels = .5,
+        border.lwds = c(2, 1),
+        palette = "Pastel1",
+        title = "Overall Composition of 16s Reads by Class and Order"
+        )
+```
+
+Reads are largely dominated by a few number of classes (Bacteroidia, Gammaproteobacteria, and Alphaproteobacteria) and orders within the class (Flavobacteriales, Oceanospirillales, and Rhodobacterales)
+
+&nbsp;
+
+### Bar Charts
+
+Relative Frequency by Phylum and Class
+```{r, fig.width=8, fig.height=5}
+physeq_other <- physeq %>%
+  tax_glom(taxrank = "Class") %>%   
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt() %>%
+  unite(Taxa_Order, Phylum:Class, sep = ";") %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other")) %>%
+  mutate(Taxa_Order = factor(Taxa_Order)) %>%
+  unite("month_day", month:day, sep = "-")
+
+colourCount = length(unique(physeq_other$Taxa_Order))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+ggplot(data=physeq_other, 
+       aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
+           y=Abundance, 
+           fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
+geom_bar(stat="identity", 
+         position = position_stack(reverse = TRUE), 
+         width = 0.95) + 
+scale_fill_manual(values=getPalette(colourCount), 
+                  guide = guide_legend(reverse = TRUE)) + 
+scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
+                   expand = c(0,0)) +
+scale_x_reordered() +
+facet_grid(~lib_season, 
+           scales = "free_x", 
+           space = "free_x") +
+theme(legend.direction="vertical", 
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold", size = 10),
+      axis.title.x=element_blank(),
+      axis.text.y = element_text(face = "bold", size = 10)) +
+labs(title = "Relative Frequency of Taxa by Phylum and Class for Each Season", 
+     caption = "'Other' taxa contribute < 1% to relative abundance",
+     y = "Relative Frequency %",
+     fill = "Phylum;Class")
+```
+
+&nbsp;
+
+Relative Frequency by Class and Order
+```{r fig.width=8, fig.height=5}
+physeq_other <- physeq %>%
+  tax_glom(taxrank = "Order") %>%   
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt() %>%
+  unite(Taxa_Order, Class:Order, sep = ";") %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other")) %>%
+  mutate(Taxa_Order = factor(Taxa_Order)) %>%
+  unite("month_day", month:day, sep = "-")
+
+colourCount = length(unique(physeq_other$Taxa_Order))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+ggplot(data=physeq_other, 
+       aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
+           y=Abundance, 
+           fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
+geom_bar(stat="identity", 
+         position = position_stack(reverse = TRUE), 
+         width = 0.95) + 
+scale_fill_manual(values=getPalette(colourCount), 
+                  guide = guide_legend(reverse=TRUE)) + 
+scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
+                   expand = c(0,0)) +
+scale_x_reordered() +
+facet_grid(~lib_season, 
+           scales = "free_x", 
+           space = "free_x") +
+theme(legend.direction="vertical", 
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust=1, face = "bold", size = 10),
+      axis.title.x=element_blank(),
+      axis.text.y = element_text(face = "bold", size = 10)) +
+labs(title = "Relative Frequency of Taxa by Class and Order for Each Season", 
+     caption = "'Other' taxa contribute < 1% to relative abundance",
+     y = "Relative Frequency %",
+     fill = "Class;Order")
+```
+
+&nbsp;
+
+Relative Frequency by Family
+```{r fig.width=8, fig.height=5}
+physeq_other <- physeq %>%
+  tax_glom(taxrank = "Family") %>%   
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt() %>%
+  #unite(Taxa_Order, Order:Family, sep = ";") %>%
+  mutate(Taxa_Order = Family) %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other")) %>%
+  mutate(Taxa_Order = factor(Taxa_Order)) %>%
+  unite("month_day", month:day, sep = "-")
+
+colourCount = length(unique(physeq_other$Taxa_Order))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+ggplot(data=physeq_other, 
+       aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
+           y=Abundance, 
+           fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
+geom_bar(stat="identity", 
+         position = position_stack(reverse = TRUE), 
+         width = 0.95) + 
+scale_fill_manual(values=getPalette(colourCount), 
+                  guide = guide_legend(reverse=TRUE)) + 
+scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
+                   expand = c(0,0)) +
+scale_x_reordered() +
+facet_grid(~lib_season, 
+           scales = "free_x", 
+           space = "free_x") +
+theme(legend.direction="vertical", 
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust=1, face = "bold", size = 10),
+      axis.title.x=element_blank(),
+      axis.text.y = element_text(face = "bold", size = 10)) +
+labs(title = "Relative Frequency of Taxa Family for Each Season", 
+     caption = "'Other' taxa contribute < 1% to relative abundance",
+     y = "Relative Frequency %",
+     fill = "Family")
+```
+
+&nbsp;
+
+Relative Frequency by Genus
+```{r fig.width=8, fig.height=5}
+physeq_other <- physeq %>%
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt() %>%
+  mutate(Taxa_Order = Genus) %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other or Uncultured")) %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Taxa_Order == "uncultured", "Other or Uncultured")) %>%
+  mutate(Taxa_Order = factor(Taxa_Order)) %>%
+  unite("month_day", month:day, sep = "-")
+
+colourCount = length(unique(physeq_other$Taxa_Order))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+ggplot(data=physeq_other, 
+       aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
+           y=Abundance, 
+           fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
+geom_bar(stat="identity", 
+         position = position_stack(reverse = TRUE), 
+         width = 0.95) + 
+scale_fill_manual(values=getPalette(colourCount), 
+                  guide = guide_legend(reverse=TRUE)) + 
+scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
+                   expand = c(0,0)) +
+scale_x_reordered() +
+facet_grid(~lib_season, 
+           scales = "free_x", 
+           space = "free_x") +
+theme(legend.direction="vertical", 
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust=1, face = "bold", size = 10),
+      axis.title.x=element_blank(),
+      axis.text.y = element_text(face = "bold", size = 10)) +
+labs(title = "Relative Frequency of Taxa by Genus for Each Season", 
+     caption = "'Other' taxa contribute < 1% to relative abundance",
+     y = "Relative Frequency %",
+     fill = "Genus")
+```
+
+&nbsp;
+
+## Beta Diversity, Clustering, and Ordination
+
+Weighted Unifrac can be used to calculate the distance between samples. It accounts for the relative abundance of taxa shared between samples and utilizes presence/absence data.
+
+### Hierarchical Clustering
+
+Create Weighted Unifrac distance matrix
+```{r}
+physeq_wunifrac <- distance(physeq_rarefy, method = "wunifrac" )
+```
+
+&nbsp;
+
+Perform clustering
+```{r}
+par(mar = c(3,4,3,6)) # set margins of plot
+
+physeq_hclust <- hclust(physeq_wunifrac, method="complete")
+hclust_dend <- as.dendrogram(physeq_hclust)
+mycols <- c(`Early Summer` ="#F8766D", `Mid Summer`="#00BA38", `Late Summer`="#619CFF") 
+labels_colors(hclust_dend) <- mycols[physeq@sam_data$Summer_Stage][order.dendrogram(hclust_dend)]
+labels(hclust_dend) <- physeq@sam_data$lib_date[order.dendrogram(hclust_dend)]
+plot(hclust_dend, main = "Clustering on Weighted Unifrac Distance with Complete Linkage",
+     horiz = TRUE)
+legend("topleft", legend = levels(physeq@sam_data$Summer_Stage), fill = mycols,
+       box.lwd = 0, box.col = "white",bg = "white")
+```
+
+&nbsp;
+
+### Ordination
+Helper functions modified from:
+
+https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html
+
+http://joey711.github.io/phyloseq-demo/phyloseq-demo.html
+
+```{r}
+# convert the all sample_data() within a phyloseq object to a vegan compatible data object
+physeq_to_vegan_sd <- function(physeq_sd) {
+  sd <- data.frame(sample_data(physeq_sd))
+  return(sd)
+}
+
+# convert the otu_table() within a phyloseq object to a vegan compatible data object
+physeq_to_vegan_otu <- function(physeq_otu) {
+  OTU <- otu_table(physeq_otu)
+  if (taxa_are_rows(OTU)) {
+    OTU <- t(OTU)
+  }
+  return(as(OTU, "matrix"))
+}
+```
+
+&nbsp;
+
+Perform Hellinger transformation on rarefied data. Euclidiean distance is required for linear methods like principal component analysis (PCA) and redundancy analysis (RDA).
+
+```{r}
+physeq_hel <- transform(physeq_rarefy, transform = "hellinger")
+physeq_hel_distance <- distance(physeq_hel, method = "euclidean")
+```
+
+Create data structures for analysis in vegan
+```{r}
+# rarefied data
+veg_physeq_rarefy_sd <- physeq_to_vegan_sd(physeq_rarefy)[,6:14]
+veg_physeq_rarefy_otu <- physeq_to_vegan_otu(physeq_rarefy)
+
+# Hellinger transformed data
+veg_physeq_hel_sd <- physeq_to_vegan_sd(physeq_hel)[,6:14]
+veg_physeq_hel_otu <- physeq_to_vegan_otu(physeq_hel)
+```
+
+Redundancy analysis (RDA)
+
+Perform PCA ordination (same as unconstrained RDA)
+
+```{r}
+RDA_hel_uncon <- ordinate(physeq_hel,
+                    method = "RDA")
+
+RDA_hel_fit <- gg_envfit(RDA_hel_uncon, veg_physeq_hel_sd, 
+                         alpha = 1, 
+                         groups = physeq@sam_data$Summer_Stage,
+                         scaling = 2,
+                         perm = 100000, plot = FALSE)
+
+p = plot_ordination(
+        physeq_hel,
+        ordination = RDA_hel_uncon,
+        type = "samples",
+        color ="Summer_Stage",
+        shape = "lib_season") +
+        ggtitle("PCA") + 
+        geom_point(size = 2.5) +
+        #geom_text_repel(aes(label = as.character(lib_dates)), size = 3) + 
+        labs(color = "Summer Stage", shape = "Season") + 
+        scale_x_continuous(limits = c(-1,1)) +
+        scale_y_continuous(limits = c(-1,1))
+
+# Add the environmental variables as arrows
+arrowmat = RDA_hel_fit$df_arrows[,c("x","y")]
+# Add labels, make a data.frame
+arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
+# Define the arrow aesthetic mapping
+arrow_map = aes(xend = x, yend = y, x = 0, y = 0, shape = NULL, color = NULL)
+label_map = aes(x = x*1.1, y = y*1.1, shape = NULL, color = NULL, label = labels)
+arrowhead = arrow(length = unit(0.05, "npc"))
+p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead, alpha = 0.75) + 
+    geom_text(label_map, size = 3, data = arrowdf) #+ 
+    #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
+p1
+```
+
+Determine what environmental variables best fit with PCA axis 1 and 2
+```{r}
+fit_RDA <- envfit(RDA_hel_uncon, veg_physeq_hel_sd, permutations = 10000)
+fit_RDA
+```
+
+Temperature and Nitrite and Nitrate have the highest correlation and lowest P values.
+
+&nbsp;
+
+Perform RDA constrained on Temperature and Nitrite and Nitrate
+
+```{r}
+# at least 2 variables required in formula
+RDA_hel <- ordinate(physeq_hel,
+                    method = "RDA",
+                    formula = ~ Temperature + Nitrite.and.Nitrate)
+
+p = plot_ordination(
+        physeq_hel,
+        ordination = RDA_hel,
+        type = "samples",
+        color ="Summer_Stage",
+        shape = "lib_season") +
+        ggtitle("RDA - Constrained on Temperature and Nitrite and Nitrate") + 
+        geom_point(size = 2.5) +
+        geom_text_repel(aes(label = as.character(lib_dates)), size = 2.5) +
+        labs(color = "Summer Stage", shape = "Season") +
+        scale_x_continuous(limits = c(-1.5,1.5)) +
+        scale_y_continuous(limits = c(-1.5,1.5))
+
+# Add the environmental variables as arrows
+arrowmat = vegan::scores(RDA_hel, display = "bp")
+# Add labels, make a data.frame
+arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
+# Define the arrow aesthetic mapping
+arrow_map = aes(xend = RDA1, yend = RDA2, x = 0, y = 0, shape = NULL, color = NULL)
+label_map = aes(x = RDA1*1.2, y = RDA2*1.2, shape = NULL, color = NULL, label = labels)
+arrowhead = arrow(length = unit(0.05, "npc"))
+p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
+    geom_text(label_map, size = 3, data = arrowdf) #+ 
+    #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
+p1
+```
+
+```{r}
+RDA_hel
+```
+
+About 30% of the variance can be explained by Temperatrue and Nitrite and Nitrate
+
+&nbsp;
+
+Ordinate with NMDS and plot significant environmental variables
+
+```{r}
+nmds_ord <- ordinate(physeq_rarefy, 
+                     method = "NMDS", 
+                     distance = "wunifrac")
+
+nmds_fit <- gg_envfit(nmds_ord, veg_physeq_rarefy_sd, 
+          alpha = .05, # minimum P-value for environmental var
+          groups = physeq@sam_data$Summer_Stage,
+          scaling = 2,
+          perm = 100000, plot = FALSE)
+
+names(nmds_fit$df_arrows)[names(nmds_fit$df_arrows) == "x"] <- "NMDS1"
+names(nmds_fit$df_arrows)[names(nmds_fit$df_arrows) == "y"] <- "NMDS2"
+
+p = plot_ordination(
+        physeq_rarefy,
+        ordination = nmds_ord,
+        type = "samples",
+        color ="Summer_Stage",
+        shape = "lib_season") +
+        ggtitle("NMDS on Weighed Unifrac Distance Fit with Environmental Variables") + 
+        geom_point(size = 2.5) +
+        geom_text_repel(aes(label = as.character(lib_dates)), size = 2.5) +
+        labs(color = "Summer Stage", shape = "Season")
+
+# Add the environmental variables as arrows
+arrowmat = nmds_fit$df_arrows[,c("NMDS1","NMDS2")]
+# Add labels, make a data.frame
+arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
+# Define the arrow aesthetic mapping
+arrow_map = aes(xend = NMDS1, yend = NMDS2, x = 0, y = 0, shape = NULL, color = NULL)
+label_map = aes(x = NMDS1*1.1, y = NMDS2*1.1, shape = NULL, color = NULL, label = labels)
+arrowhead = arrow(length = unit(0.05, "npc"))
+p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
+    geom_text(label_map, size = 3, data = arrowdf)# + 
+    #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
+p1
+```
+
+```{r}
+fit_NMDS <- envfit(nmds_ord, veg_physeq_rarefy_sd, permutations = 100000)
+fit_NMDS
+```
+
+NMDS results are similar to the RDA results. Stress of value of ~ 0.0336 indicates a high goodness of fit, or that the NMDS is a good representation, in reduced dimensions, of the original distance matrix. 
+
+&nbsp;
+
+### PERMANOVA test on categorical/group variables Summer Stage and Library Season
+
+```{r}
+adonis2(physeq_hel_distance ~ Summer_Stage, 
+        data = physeq_to_vegan_sd(physeq_hel),
+        permutations = 10000)
+```
+
+Significant p-value for Summer Stage groups indicates that either the centroid and/or the dispersion of between the groups is significantly different.
+
+```{r}
+adonis2(physeq_hel_distance ~ lib_season,
+        data = physeq_to_vegan_sd(physeq_hel),
+        permutations = 10000)
+```
+
+Library seasons does not have a significant p-value in the PERMANOVA test.
+ 
+&nbsp;
+
+Test for heteroscedasticity (PERMDSIP = Permutation test + Multivariate homogeneity of groups dispersions (variances) )
+```{r, include=FALSE}
+betadisper(physeq_hel_distance, physeq@sam_data$Summer_Stage)
+```
+
+```{r}
+permutest(betadisper(physeq_hel_distance, physeq@sam_data$Summer_Stage), permutations = 10000)
+```
+
+&nbsp;
+
+```{r include=FALSE}
+betadisper(physeq_hel_distance, physeq@sam_data$lib_season)
+```
+
+```{r}
+permutest(betadisper(physeq_hel_distance, physeq@sam_data$lib_season), permutations = 10000)
+```
+
+Summer Stage fails assumption of homoscedasticity for adonis/PERMANOVA test. Library Season does not fail the assumption of homoscedasticity for adonis/PERMANOVA test
+
+Both PERMANOVA and PERMDISP tests are significant with Summer Stage and the groups are unbalanced. Therefore, you can't tell if the PERMANOVA is significant due to difference in a group's centroid or dispersion.
+
+There is no strong evidence for Library Season groups to have different centroids or dispersions.  
+
+
+
+&nbsp;
+
+## Core Microbiome
+
+Core taxa must be detected and present in all samples of a given group.
+
+### Venn Diagrams
+
+Modified from https://microbiome.github.io/tutorials/core_venn.html
+
+```{r}
+physeq_comp <- transform(physeq, "compositional")
+```
+
+&nbsp;
+
+Core microbiome by Summer Stage at Order level
+```{r}
+summer_stages <- unique(as.character(meta(physeq_comp)$Summer_Stage))
+
+physeq_comp_order <- physeq_comp %>%
+tax_glom(taxrank = "Order")
+
+core_summer_stage_order <- c()
+
+for (n in summer_stages){
+    ps_sub <- subset_samples(physeq_comp_order, Summer_Stage == n)
+    core_m <- core_members(ps_sub,
+                   detection = 1/10000000,
+                   prevalence = 100/100, 
+                   include.lowest = TRUE)
+    
+    print(paste0("No. of core Order taxa in ", n, " : ", length(core_m)))
+    core_summer_stage_order[[n]] <- core_m
+}
+```
+
+&nbsp;
+
+Core microbiome by Summer Stage at Family level
+```{r}
+physeq_comp_family <- physeq_comp %>%
+tax_glom(taxrank = "Family")
+
+core_summer_stage_family <- c()
+
+for (n in summer_stages){
+    ps_sub <- subset_samples(physeq_comp_family, Summer_Stage == n)
+    core_m <- core_members(ps_sub,
+                   detection = 1/10000000,
+                   prevalence = 100/100, 
+                   include.lowest = TRUE)
+    
+    print(paste0("No. of core Family taxa in ", n, " : ", length(core_m)))
+    core_summer_stage_family[[n]] <- core_m
+}
+```
+
+Core microbiome by Summer Stage at Genus level
+```{r}
+core_summer_stage_genus <- c()
+
+for (n in summer_stages){
+    ps_sub <- subset_samples(physeq_comp, Summer_Stage == n)
+    core_m <- core_members(ps_sub,
+                           detection = 1/10000000,
+                           prevalence = 100/100, 
+                           include.lowest = TRUE)
+    print(paste0("No. of core Genus taxa in ", n, " : ", length(core_m)))
+    core_summer_stage_genus[[n]] <- core_m
+}
+```
+
+&nbsp;
+
+Core microbiome by Library Season at Genus level
+```{r}
+lib_season <- unique(as.character(meta(physeq_comp)$lib_season))
+core_lib_season_genus <- c() # an empty object to store information
+
+for (n in lib_season){
+    ps_sub <- subset_samples(physeq_comp, lib_season == n)
+    core_m <- core_members(ps_sub,
+                           detection = 1/10000000,
+                           prevalence = 100/100, 
+                           include.lowest = TRUE)
+    print(paste0("No. of core Genus taxa in ", n, " : ", length(core_m)))
+    core_lib_season_genus[[n]] <- core_m
+}
+```
+
+&nbsp;
+
+```{r fig.width=6, fig.height=12}
+
+v1 <- plot(venn(core_summer_stage_order),
+       fills = mycols,
+       main = "Core Microbiome of Summer Stages at Order Level",
+       alpha = .7,
+       labels = list(fontsize = 9))
+
+v2 <- plot(venn(core_summer_stage_family),
+       fills = mycols,
+       main = "Core Microbiome of Summer Stages at Family Level",
+       alpha = .7,
+       labels = list(fontsize = 9))
+
+v3 <- plot(venn(core_summer_stage_genus),
+       fills = mycols, 
+       main = "Core Microbiome of Summer Stages at Genus Level",
+       cex.main = 5,
+       alpha = .7,
+       labels = list(fontsize = 9))
+
+# arrange plots and add spacing between
+ggarrange(v1, NULL, v2, NULL, v3, 
+          nrow = 5, 
+          heights = c(1, 0.2, 1, 0.2, 1))
+```
+
+&nbsp;
+
+```{r fig.width=6, fig.height=3.6}
+plot(venn(core_lib_season_genus),
+       fills = mycols,
+       main = "Core Microbiome of Library Seasons at Genus Level",
+       alpha = .7,
+       labels = list(fontsize = 9))
+```
+
+Both summer stages and library seasons share a core of 62 taxa at Genus level.
+
+At Order level, 31 taxa are shared between all groups.
+
+&nbsp;
+
+Core taxa names in Summer Stages
+```{r}
+early_summer_core_order <- subset_samples(
+                           physeq_comp_order, Summer_Stage == "Early Summer") %>%
+                           core(detection = 1/10000000,
+                                prevalence = 100/100, 
+                                include.lowest = TRUE) %>%
+                           tax_table()
+early_summer_core_order <- as.vector(early_summer_core_order[,"Order"])
+
+mid_summer_core_order <- subset_samples(
+                         physeq_comp_order, Summer_Stage == "Mid Summer") %>%
+                         core(detection = 1/10000000,
+                              prevalence = 100/100, 
+                              include.lowest = TRUE) %>%
+                         tax_table()
+mid_summer_core_order <- as.vector(mid_summer_core_order[,"Order"])
+
+late_summer_core_order <- subset_samples(
+                          physeq_comp_order, Summer_Stage == "Late Summer") %>%
+                          core(detection = 1/10000000,
+                               prevalence = 100/100, 
+                               include.lowest = TRUE) %>%
+                          tax_table()
+late_summer_core_order <- as.vector(late_summer_core_order[,"Order"])
+```
+
+31 core taxa at Order level
+```{r}
+Reduce(intersect, list(early_summer_core_order, 
+                       mid_summer_core_order,
+                       late_summer_core_order))
+```
+
+Core taxa unique to Early Summer and Late Summer only
+
+```{r}
+setdiff(intersect(early_summer_core_order, late_summer_core_order), mid_summer_core_order)
+```
+
+Core taxa unique to Mid Summer and Late Summer only
+
+```{r}
+setdiff(intersect(mid_summer_core_order, late_summer_core_order), early_summer_core_order)
+```
+
+Core taxa unique to Early Summer only
+
+```{r}
+setdiff(setdiff(early_summer_core_order, late_summer_core_order), mid_summer_core_order)
+```
+
+Core taxa unique to Late Summer only
+
+```{r}
+setdiff(setdiff(late_summer_core_order, early_summer_core_order), mid_summer_core_order)
+```
+
+
+### Top 10 taxa at Order, Family, and Genus levels by Proportion
+
+Top 10 taxa at Order level by proportion
+```{r}
+# create phyloseq object of the core microbiome
+physeq_core_counts <- core(physeq,
+                           detection = 1,
+                           prevalence = 100/100, 
+                           include.lowest = TRUE)
+```
+
+```{r}
+core_order_prop <- as_tibble(taxa_proportions(physeq_core_counts, "Order")) %>%
+                   arrange(desc(Proportion))
+
+top_10_core_order <- core_order_prop[1:10,]
+top_10_core_order
+```
+
+```{r}
+sum(top_10_core_order[,2])
+```
+Top 10 Order taxa sum to 96.9% of the total proportion of reads
+
+&nbsp;
+
+Top 10 taxa at Family level by proportion
+```{r}
+core_family_prop <- as_tibble(taxa_proportions(physeq_core_counts, "Family")) %>%
+                   arrange(desc(Proportion))
+
+top_10_core_family <- core_family_prop[1:10,]
+top_10_core_family
+```
+```{r}
+sum(top_10_core_family[,2])
+```
+Top 10 Family taxa sum to 93.4% of the total proportion of reads
+
+&nbsp;
+
+Top 10 taxa at Genus level by proportion
+```{r}
+core_genus_prop <- as_tibble(taxa_proportions(physeq_core_counts, "Genus")) %>%
+                   arrange(desc(Proportion))
+
+top_10_core_genus <- core_genus_prop[1:10,]
+top_10_core_genus
+```
+
+```{r}
+sum(top_10_core_genus[,2])
+```
+Many taxa are uncultured at Genus level
+
+&nbsp;
+
+### Top 10 Taxa by Abundance at Order Level
+
+```{r}
+physeq_order <- physeq %>%
+  tax_glom(taxrank = "Order") %>%   
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt() %>%
+  mutate(year_plot = ifelse(month >= 10, 2000, # for plotting multiple years
+                     ifelse(month < 10, 2001, NA))) %>% # onto the same scale
+  mutate(plot_date = make_date(year_plot, month, day))
+```
+
+Flavobacteriales
+```{r}
+Flavobacteriales <- physeq_order %>% 
+  filter(Order == "Flavobacteriales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Flavobacteriales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Rhodobacterales
+```{r}
+Rhodobacterales <- physeq_order %>% 
+  filter(Order == "Rhodobacterales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Rhodobacterales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Oceanospirillales
+```{r}
+Oceanospirillales <- physeq_order %>% 
+  filter(Order == "Oceanospirillales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Oceanospirillales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Cellvibrionales
+```{r}
+Cellvibrionales <- physeq_order %>% 
+  filter(Order == "Cellvibrionales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Cellvibrionales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Nitrosococcales
+```{r}
+Nitrosococcales <- physeq_order %>% 
+  filter(Order == "Nitrosococcales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Nitrosococcales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Thiomicrospirales
+```{r}
+Thiomicrospirales <- physeq_order %>% 
+  filter(Order == "Thiomicrospirales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Thiomicrospirales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Alteromonadales
+```{r}
+Alteromonadales <- physeq_order %>% 
+  filter(Order == "Alteromonadales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Alteromonadales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Sphingobacteriales
+```{r}
+Sphingobacteriales <- physeq_order %>% 
+  filter(Order == "Sphingobacteriales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Sphingobacteriales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Burkholderiales
+```{r}
+Burkholderiales <- physeq_order %>% 
+  filter(Order == "Burkholderiales") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Burkholderiales", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+SAR11
+```{r}
+SAR11 <- physeq_order %>% 
+  filter(Order == "SAR11_clade") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "SAR11", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+```{r fig.width=12, fig.height=12}
+top_10_order_plot <- ggarrange(
+  Flavobacteriales,			
+  Rhodobacterales,		
+  Oceanospirillales,		
+  Cellvibrionales,			
+  Nitrosococcales,			
+  Thiomicrospirales,			
+  Alteromonadales,			
+  Sphingobacteriales,			
+  Burkholderiales,			
+  SAR11,
+  nrow = 5,
+  ncol = 2, 
+  common.legend = TRUE, 
+  legend = "bottom", 
+  align = "hv")
+
+annotate_figure(top_10_order_plot,
+                left = text_grob("% Abundance", rot = 90, size = 14),
+                top = text_grob("Top 10 Taxa by Abundance at Order Level", size = 16))
+```
+
+### Top 10 Taxa by Abundance at Family Level
+
+```{r}
+physeq_family <- physeq %>%
+  tax_glom(taxrank = "Family") %>%   
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt() %>%
+  mutate(year_plot = ifelse(month >= 10, 2000, # for plotting multiple years
+                     ifelse(month < 10, 2001, NA))) %>% # onto the same scale
+  mutate(plot_date = make_date(year_plot, month, day))
+```
+
+Flavobacteriaceae
+```{r}
+Flavobacteriaceae <- physeq_family %>% 
+  filter(Family == "Flavobacteriaceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Flavobacteriaceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Rhodobacteraceae
+```{r}
+Rhodobacteraceae <- physeq_family %>% 
+  filter(Family == "Rhodobacteraceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Rhodobacteraceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Nitrincolaceae
+```{r}
+Nitrincolaceae <- physeq_family %>% 
+  filter(Family == "Nitrincolaceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Nitrincolaceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Cryomorphaceae
+```{r}
+Cryomorphaceae <- physeq_family %>% 
+  filter(Family == "Cryomorphaceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Cryomorphaceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Porticoccaceae
+```{r}
+Porticoccaceae <- physeq_family %>% 
+  filter(Family == "Porticoccaceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Porticoccaceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Methylophagaceae
+```{r}
+Methylophagaceae <- physeq_family %>% 
+  filter(Family == "Methylophagaceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Methylophagaceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Thioglobaceae
+```{r}
+Thioglobaceae <- physeq_family %>% 
+  filter(Family == "Thioglobaceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Thioglobaceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+NS11-12_marine_group
+```{r}
+NS11_12_marine_group <- physeq_family %>% 
+  filter(Family == "NS11-12_marine_group") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "NS11-12 Marine Group", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+Methylophilaceae
+```{r}
+Methylophilaceae <- physeq_family %>% 
+  filter(Family == "Methylophilaceae") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "Methylophilaceae", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+NS9_marine_group
+```{r}
+NS9_marine_group <- physeq_family %>% 
+  filter(Family == "NS9_marine_group") %>%
+  ggplot(aes(x = plot_date, y = Abundance, 
+    group = factor(lib_season), color = factor(lib_season))) +
+    geom_line(size = 1, alpha = .75) +
+    geom_point(size = 1.25, alpha = .75) +
+    scale_x_date(date_breaks = "months", date_labels = "%b") + 
+    labs(title = "NS9 Marine Group", color = "Season", y = "% Abundance") +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+```
+
+```{r fig.width=12, fig.height=12}
+top_10_family_plot <- ggarrange(
+  Flavobacteriaceae,
+  Rhodobacteraceae,
+  Nitrincolaceae,
+  Cryomorphaceae,
+  Porticoccaceae,
+  Methylophagaceae,
+  Thioglobaceae,
+  NS11_12_marine_group,
+  Methylophilaceae,
+  NS9_marine_group,
+  nrow = 5,
+  ncol = 2, 
+  common.legend = TRUE, 
+  legend = "bottom", 
+  align = "hv")
+
+annotate_figure(top_10_family_plot,
+                left = text_grob("% Abundance", rot = 90, size = 14),
+                top = text_grob("Top 10 Taxa by Abundance at Family Level", size = 16))
+```
+
+
+```{r}
+sessionInfo()
+```

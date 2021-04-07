@@ -1,0 +1,8 @@
+sample-id	forward-absolute-filepath	reverse-absolute-filepath
+S3L03	/home/cphoun/palmer_station/trimmed/S3L03_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S3L03_2_trimmed.fastq
+S3L04	/home/cphoun/palmer_station/trimmed/S3L04_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S3L04_2_trimmed.fastq
+S3L05	/home/cphoun/palmer_station/trimmed/S3L05_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S3L05_2_trimmed.fastq
+S3L06	/home/cphoun/palmer_station/trimmed/S3L06_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S3L06_2_trimmed.fastq
+S3L07	/home/cphoun/palmer_station/trimmed/S3L07_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S3L07_2_trimmed.fastq
+S3L08	/home/cphoun/palmer_station/trimmed/S3L08_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S3L08_2_trimmed.fastq
+S3L09	/home/cphoun/palmer_station/trimmed/S3L09_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S3L09_2_trimmed.fastq

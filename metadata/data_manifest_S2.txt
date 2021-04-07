@@ -1,0 +1,7 @@
+sample-id	forward-absolute-filepath	reverse-absolute-filepath
+S2L05	/home/cphoun/palmer_station/trimmed/S2L05_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S2L05_2_trimmed.fastq
+S2L06	/home/cphoun/palmer_station/trimmed/S2L06_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S2L06_2_trimmed.fastq
+S2L07	/home/cphoun/palmer_station/trimmed/S2L07_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S2L07_2_trimmed.fastq
+S2L08	/home/cphoun/palmer_station/trimmed/S2L08_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S2L08_2_trimmed.fastq
+S2L09	/home/cphoun/palmer_station/trimmed/S2L09_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S2L09_2_trimmed.fastq
+S2L10	/home/cphoun/palmer_station/trimmed/S2L10_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/S2L10_2_trimmed.fastq

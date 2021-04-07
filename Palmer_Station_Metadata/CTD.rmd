@@ -1,0 +1,66 @@
+---
+title: "CTD_extract"
+author: "Codey"
+date: "3/2/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "F:/bioinformatics/palmer_station/Palmer_Station_Metadata/CTD_B_downcast")
+getwd()
+```
+
+Install oce to parse .cnv files 
+```{r message =FALSE}
+library(devtools)
+install_github("dankelley/oce", ref="develop")
+```
+
+Load the oce library
+```{r message =FALSE}
+library(oce)
+```
+
+Get list of .cnv files
+```{r}
+cnv_files <- list.files(path = "F:/bioinformatics/palmer_station/Palmer_Station_Metadata/CTD_B_downcast")
+cnv1 <- read.ctd(cnv_files[1])
+```
+
+Initialize the dataframe
+```{r}
+ctd_data <- c(names(cnv1[["data"]]))
+col_names = c("file", "Date", ctd_data)
+
+df <- as.data.frame(
+  matrix(ncol = length(col_names), nrow=length(cnv_files),
+             dimnames = list(NULL,col_names))
+)
+```
+
+Extract data from cnv files
+```{r warning=FALSE}
+for (i in 1:length(cnv_files)){
+  try({
+    cnv_i <- read.ctd(cnv_files[i], missingValue=NULL)
+    cnv_i <- ctdTrim(cnv_i, method = "downcast")
+    close_10 <- which(abs(cnv_i@data$depth-10)==min(abs(cnv_i@data$depth-10)))[1]
+    df[i, "file"] <- cnv_files[i]
+    df[i, "Date"] <- c(strsplit(as.character(cnv_i@metadata$date), " ")[[1]][1])
+    df[i, "temperature"] <- cnv_i@data$temperature[close_10]
+    df[i, "conductivity"] <- cnv_i@data$conductivity[close_10]
+    df[i, "pressure"] <- cnv_i@data$pressure[close_10]
+    df[i, "fluorescence"] <- cnv_i@data$fluorescence[close_10]
+    df[i, "salinity"] <- cnv_i@data$salinity[close_10]
+    df[i, "depth"] <- cnv_i@data$depth[close_10]
+    df[i, "density"] <- cnv_i@data$density[close_10]
+    })
+}
+```
+Export dataframe to csv
+```{r}
+write.csv(df, "../CTD_B_downcast_12-15.csv", row.names = FALSE)
+```
