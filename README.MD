@@ -32,3 +32,7 @@ The marine microbial ecosystem of the waters off the Western Antarctic Peninsula
 ./qiime2 contains the main QIIME2 outputs required for the R analysis.
 
 ./scripts contains the primary bash script used to process the 16S reads on the SJSU CoS HPC.
+
+&nbsp;
+
+R analysis can also be found at: <https://codey-phoun.github.io/palmer_station_16S/>
