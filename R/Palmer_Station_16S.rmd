@@ -3,8 +3,8 @@ title: "Palmer Station 16S Analysis"
 author: "Codey Phoun"
 date: "4/06/2021"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -107,10 +107,12 @@ Sample_Name_Date %>%
   print(n = 15)
 ```
 
+Summer stages
 ```{r}
 table(physeq@sam_data$Summer_Stage)
 ```
 
+Library seasons
 ```{r}
 table(physeq@sam_data$lib_season)
 ```
@@ -142,7 +144,7 @@ tax_table(physeq)[,1] <- gsub( "d__","", tax_table(physeq)[,1])
 
 Scale and center environmental metadata
 ```{r}
-sample_data(physeq)[,6:14] <- scale(sample_data(physeq)[,6:14])
+sample_data(physeq)[,6:14] <- scale(sample_data(physeq)[,6:14]) # columns 6:14 contain numerical env data
 ```
 
 Make vector of the sample collection dates for downstream labeling of libraries
@@ -161,7 +163,7 @@ Species labels are unreliable and many taxa are labeled as "uncultured" at speci
 
 ```{r}
 physeq <- physeq %>%
-tax_glom(taxrank = "Genus", NArm = TRUE)
+tax_glom(taxrank = "Genus", NArm = TRUE) # agglomerate on Genus level
 tax_table(physeq) <- tax_table(physeq)[,1:6] # drop taxa rank Species from tax_table
 ```
 
@@ -191,9 +193,9 @@ physeq_rarefy <- rarefy_even_depth(physeq, sample.size = min(sample_sums(physeq)
 
 Plot a rarefaction curve
 ```{r fig.keep = 'last', results = 'hide'}
-rare_plot <- ggrare(physeq, step = 500, label = sample_names(physeq), 
+rare_plot <- ggrare(physeq, step = 500, label = sample_names(physeq), # from phyloseq-extended functions
                     color = "lib_season", parallel = TRUE) +
-             geom_vline(xintercept = min(sample_sums(physeq)), 
+             geom_vline(xintercept = min(sample_sums(physeq)), # create vertical line on smallest sample size
                         linetype="dashed", size = 1) +
              scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
              scale_x_continuous(breaks = scales::pretty_breaks(n = 7), 
@@ -208,6 +210,23 @@ rare_plot
 Rarefying to the smallest sample size looks to be OK because there is not a large increase in 
 observed taxa (low slope) for each library after rarefying to 192,952.
 
+Total number of reads before rarefying
+```{r}
+sum(sample_sums(physeq))
+```
+
+Total number of reads after rarefying
+```{r}
+sum(sample_sums(physeq_rarefy))
+```
+
+Proportion of rarefied reads to original number of reads
+```{r}
+2894280/5518789
+```
+ 
+About 52% of the original 5.5 million reads are left after rarefying. The rarefied library has almost 2.9 million reads.
+
 &nbsp;
 
 ## Import the Environmental Metadata
@@ -220,7 +239,7 @@ Helper function to transform the data
 ```{r}
 data_transform <- function(df) {
     df %>%
-    separate("Date", into = c("Year", "Month", "Day"), 
+    separate("Date", into = c("Year", "Month", "Day"), # separate and create new columns for dates
              remove =  FALSE, convert = TRUE) %>%
     mutate(year_plot = ifelse(Month >= 10, 2000, # for plotting multiple years
                   ifelse(Month < 10, 2001, NA))) %>% # onto the same scale
@@ -229,13 +248,13 @@ data_transform <- function(df) {
         (Year == 2012) ~ "12-13",
         (Year <= 2013 & Month <= 3) ~ "12-13",
         (Year == 2013 & Month > 3) ~ "13-14",
-        (Year == 2014 & Month <=3) ~ "13-14",
-        (Year == 2014 & Month >3) ~ "14-15",
+        (Year == 2014 & Month <= 3) ~ "13-14",
+        (Year == 2014 & Month > 3) ~ "14-15",
         Year == 2015 ~ "14-15",
         TRUE ~ "none")) %>%
     mutate(Date = as.Date(Date)) %>%
     mutate(sample_16s = Date %in% lib_dates) %>% # TRUE/FALSE if date is a 16s library date 
-    mutate(month_day=paste(Month, Day, sep = "-"))
+    mutate(month_day = paste(Month, Day, sep = "-"))
 }
 ```
 
@@ -298,7 +317,7 @@ palmer_env$Notes <- NULL
 ### Chlorophyll a and Bacterial Production (Leucine Incorporation)
 
 ```{r}
-env_12_13 <- ggplot(na.omit(subset(palmer_env, lib_season %in% c("12-13"))), 
+env_12_13 <- ggplot(na.omit(subset(palmer_env, lib_season %in% c("12-13"))), # subset to 2012-2013 season
               aes(x = Date)) +
               geom_line(aes(y = `Chlorophyll (mg/m³)`, 
                             color = "Chlorophyll (mg/m³)"), 
@@ -308,16 +327,16 @@ env_12_13 <- ggplot(na.omit(subset(palmer_env, lib_season %in% c("12-13"))),
                             size = 1.05, alpha = 0.75) +
               scale_x_date(date_breaks = "months", date_labels = "%b", 
                            limits = as.Date(c('2012-10-31','2013-03-21')), expand = c(0,0),
-                           sec.axis = sec_axis(~., breaks = lib_dates[1:2], 
+                           sec.axis = sec_axis(~., breaks = lib_dates[1:2], # add sample dates as a secondary x axis on the top
                                                labels = scales::date_format("%m/%d"))) + 
               labs(title = "2012-2013") +
               scale_y_continuous(breaks = scales::pretty_breaks(n = 5), limits = c(0,36), 
-                                 sec.axis = sec_axis(~ .*5, name = "Leucine Incorp. (pmol/L/hr)", 
+                                 sec.axis = sec_axis(~ .*5, name = "Leucine Incorp. (pmol/L/hr)", # adds a secondary Y axis on the right
                                                      breaks = scales::pretty_breaks(n = 5) )) +
-              theme(axis.title.y = element_blank(),
+              theme(axis.title.y = element_blank(), # remove X and Y axis title labels
                     axis.title.x = element_blank(),
                     legend.title = element_blank()) +
-              geom_vline(xintercept = as.numeric(lib_dates[1:2]), linetype = 4) +
+              geom_vline(xintercept = as.numeric(lib_dates[1:2]), linetype = 4) + # draw vertical line on sample dates
               scale_color_manual(values = c("#00BA38", "#619CFF"))
 ```
 
@@ -387,11 +406,11 @@ Bacterial Abundance
 ```{r}
 bac_abund <- ggplot(bacterial_abundance, 
               aes(x = plot_date, y = `Abundance (num/L)`, 
-              group = factor(lib_season), color = factor(lib_season))) +
+              group = factor(lib_season), color = factor(lib_season))) + # plot each season separately 
               geom_line(size = 1, alpha = .75) +
               geom_point(size = 1.25, alpha = .75) +
               scale_x_date(date_breaks = "months", date_labels = "%b",
-                           limits = as.Date(c('2000-10-31','2001-03-25')), 
+                           limits = as.Date(c('2000-10-31','2001-03-25')), # overlay multiple years on the same scale
                            expand = c(0,0)) + 
               labs(title = "Bacterial Abundance", x ="Month", color = "Season") +
               scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
@@ -403,6 +422,7 @@ bac_abund <- ggplot(bacterial_abundance,
 ```
 
 ```{r include=FALSE}
+# Individual year plot, not necessary for final render
 ggplot(subset(bacterial_abundance, lib_season %in% c("12-13")), 
     aes(x = Date, y = `Abundance (num/L)`)) +
     geom_line(size = 1.05, alpha = 0.75) +
@@ -983,11 +1003,13 @@ Wilcoxon rank sum test is a nonparametric alternative to two sample t-test which
 
 Observed Taxa
 ```{r}
-# create boxplot for graphing later
+# perform Wilcoxon test for boxplot
+# p.adjust.method = "fdr" is the p-value adjustment by Benjamini & Hochberg (1995)
 stat_test <- physeq_alpha_div %>% 
   wilcox_test(observed ~ Summer_Stage, p.adjust.method = "fdr") %>% 
   add_xy_position(x = "Summer_Stage")
 
+# create boxplot for graphing later
 alpha_obs <- ggboxplot(physeq_alpha_div, 
   x = "Summer_Stage", 
   y = "observed",
@@ -995,8 +1017,8 @@ alpha_obs <- ggboxplot(physeq_alpha_div,
   palette = c("#F8766D", "#00BA38","#619CFF"),
   legend = "none",
   add = "jitter") + 
-  stat_compare_means(label.y = 250, label.x = .8) +
-  stat_pvalue_manual(stat_test, label = "p.adj", step.increase = .075) +
+  stat_compare_means(label.y = 250, label.x = .8) + # add Kruskal-Wallis test to boxplot
+  stat_pvalue_manual(stat_test, label = "p.adj", step.increase = .075) + # add Wilcoxon test to boxplot
   ylab("Observed Taxa") +
   xlab("") +
   labs(color = "Summer Stage")
@@ -1012,6 +1034,7 @@ kruskal.test(observed ~ Summer_Stage, data = physeq_alpha_div)
 pairwise.wilcox.test(physeq_alpha_div$observed, physeq_alpha_div$Summer_Stage,
                  p.adjust.method = "fdr")
 ```
+
 Kruskal-Wallis results indicate a difference in the median observed taxa between the 3 groups.
 Wilcox test shows strong evidence for difference in median observed taxa in Mid Summer and Late Summer.
 
@@ -1142,13 +1165,14 @@ None of the tests show significant differences between Early Summer and Mid Summ
 
 ### Tree Map
 
+Create a tree map of the data at Class and Order levels
 ```{r warning=FALSE}
-physeq@sam_data$merge <- "merge"
+physeq@sam_data$merge <- "merge" # create a new column "merge" shared between all samples
 physeq_order_other <- physeq %>%
-  merge_samples("merge") %>%
-  tax_glom(taxrank = "Order") %>%   
-  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
-  psmelt()
+  merge_samples("merge") %>% # merge all samples together
+  tax_glom(taxrank = "Order") %>% # agglomerate on Order level
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>% # transform to relative abundance
+  psmelt() # convert to long data frame
 ```
 
 ```{r warning=FALSE, fig.width=10, fig.height=6}
@@ -1175,30 +1199,30 @@ Reads are largely dominated by a few number of classes (Bacteroidia, Gammaproteo
 Relative Frequency by Phylum and Class
 ```{r, fig.width=8, fig.height=5}
 physeq_other <- physeq %>%
-  tax_glom(taxrank = "Class") %>%   
-  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
-  psmelt() %>%
-  unite(Taxa_Order, Phylum:Class, sep = ";") %>%
+  tax_glom(taxrank = "Class") %>% # agglomerate on Class level
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>% # transform to relative abundance
+  psmelt() %>% # convert from phyloseq object to a long data frame
+  unite(Taxa_Order, Phylum:Class, sep = ";") %>% # create Phylum;Class column
   mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other")) %>%
   mutate(Taxa_Order = factor(Taxa_Order)) %>%
   unite("month_day", month:day, sep = "-")
 
-colourCount = length(unique(physeq_other$Taxa_Order))
-getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+colourCount = length(unique(physeq_other$Taxa_Order)) # obtain number of colors needed
+getPalette = colorRampPalette(brewer.pal(9, "Set1")) # create palette with Set1
 
 ggplot(data=physeq_other, 
-       aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
+       aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), # order by date for each library season
            y=Abundance, 
-           fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
+           fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) + # order taxa within bars by abundance
 geom_bar(stat="identity", 
-         position = position_stack(reverse = TRUE), 
+         position = position_stack(reverse = TRUE), # order taxa in reverse
          width = 0.95) + 
-scale_fill_manual(values=getPalette(colourCount), 
-                  guide = guide_legend(reverse = TRUE)) + 
-scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
-                   expand = c(0,0)) +
-scale_x_reordered() +
-facet_grid(~lib_season, 
+scale_fill_manual(values = getPalette(colourCount), # assign legend colors
+                  guide = guide_legend(reverse = TRUE)) + # make legend match order of taxa in barplot
+scale_y_continuous(breaks = scales::pretty_breaks(n = 10), # Y axis by 10% increments
+                   expand = c(0,0)) + # remove whitespace in plot
+scale_x_reordered() + # needed for reorder_within() function to order dates within each season
+facet_grid(~lib_season, # draw facets by library seasons
            scales = "free_x", 
            space = "free_x") +
 theme(legend.direction="vertical", 
@@ -1339,7 +1363,9 @@ labs(title = "Relative Frequency of Taxa by Genus for Each Season",
 
 ## Beta Diversity, Clustering, and Ordination
 
-Weighted Unifrac can be used to calculate the distance between samples. It accounts for the relative abundance of taxa shared between samples and utilizes presence/absence data.
+Beta diversity is the between-sample diversity. Several beta diversity metrics exist but not all measures incorporate abundance information. Since the samples are dominated by only a few taxa, presence/absence measures like Jaccard or Unweighted Unifrac may not be appropriate.
+
+Weighted Unifrac can be used to calculate the phylogenetically-weighted distance between samples. It accounts for the relative abundance of taxa shared between samples and utilizes presence/absence data.
 
 ### Hierarchical Clustering
 
@@ -1350,13 +1376,14 @@ physeq_wunifrac <- distance(physeq_rarefy, method = "wunifrac" )
 
 &nbsp;
 
-Perform clustering
+Perform hierarchical clustering
 ```{r}
 par(mar = c(3,4,3,6)) # set margins of plot
 
-physeq_hclust <- hclust(physeq_wunifrac, method="complete")
-hclust_dend <- as.dendrogram(physeq_hclust)
-mycols <- c(`Early Summer` ="#F8766D", `Mid Summer`="#00BA38", `Late Summer`="#619CFF") 
+physeq_hclust <- hclust(physeq_wunifrac, method="complete") # hierarchical cluster with complete linkage
+hclust_dend <- as.dendrogram(physeq_hclust) # convert to dendrogram
+mycols <- c(`Early Summer` ="#F8766D", `Mid Summer`="#00BA38", `Late Summer`="#619CFF") # ggplot2 default colors
+# add dates as labels and color by library season
 labels_colors(hclust_dend) <- mycols[physeq@sam_data$Summer_Stage][order.dendrogram(hclust_dend)]
 labels(hclust_dend) <- physeq@sam_data$lib_date[order.dendrogram(hclust_dend)]
 plot(hclust_dend, main = "Clustering on Weighted Unifrac Distance with Complete Linkage",
@@ -1364,6 +1391,9 @@ plot(hclust_dend, main = "Clustering on Weighted Unifrac Distance with Complete 
 legend("topleft", legend = levels(physeq@sam_data$Summer_Stage), fill = mycols,
        box.lwd = 0, box.col = "white",bg = "white")
 ```
+
+Several mid summer samples cluster together pretty closely. 3/9/2015 is the most distant to the rest of the samples. 
+The rest of the samples create fairly intermixed clusters. Early summer samples do not cluster with late summer samples at low distances. 
 
 &nbsp;
 
@@ -1402,11 +1432,11 @@ physeq_hel_distance <- distance(physeq_hel, method = "euclidean")
 
 Create data structures for analysis in vegan
 ```{r}
-# rarefied data
+# rarefied data to vegan
 veg_physeq_rarefy_sd <- physeq_to_vegan_sd(physeq_rarefy)[,6:14]
 veg_physeq_rarefy_otu <- physeq_to_vegan_otu(physeq_rarefy)
 
-# Hellinger transformed data
+# Hellinger transformed data to vegan
 veg_physeq_hel_sd <- physeq_to_vegan_sd(physeq_hel)[,6:14]
 veg_physeq_hel_otu <- physeq_to_vegan_otu(physeq_hel)
 ```
@@ -1416,10 +1446,10 @@ Redundancy analysis (RDA)
 Perform PCA ordination (same as unconstrained RDA)
 
 ```{r}
-RDA_hel_uncon <- ordinate(physeq_hel,
+RDA_hel_uncon <- ordinate(physeq_hel, # perform PCA/RDA ordination
                     method = "RDA")
 
-RDA_hel_fit <- gg_envfit(RDA_hel_uncon, veg_physeq_hel_sd, 
+RDA_hel_fit <- gg_envfit(RDA_hel_uncon, veg_physeq_hel_sd, # fit env variables to the ordination
                          alpha = 1, 
                          groups = physeq@sam_data$Summer_Stage,
                          scaling = 2,
@@ -1433,7 +1463,7 @@ p = plot_ordination(
         shape = "lib_season") +
         ggtitle("PCA") + 
         geom_point(size = 2.5) +
-        #geom_text_repel(aes(label = as.character(lib_dates)), size = 3) + 
+        #geom_text_repel(aes(label = as.character(lib_dates)), size = 3) + # too cluttered with all sample names and environmental labels
         labs(color = "Summer Stage", shape = "Season") + 
         scale_x_continuous(limits = c(-1,1)) +
         scale_y_continuous(limits = c(-1,1))
@@ -1441,6 +1471,7 @@ p = plot_ordination(
 # Add the environmental variables as arrows
 arrowmat = RDA_hel_fit$df_arrows[,c("x","y")]
 # Add labels, make a data.frame
+row.names(arrowmat) <- c("Bacterial Abundance", "Leucine Incorporation", "Chlorophyll a", "Phosphate", "Silicate", "Nitrite and Nitrate", "Temperature", "Salinity", "Primary Production")
 arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
 # Define the arrow aesthetic mapping
 arrow_map = aes(xend = x, yend = y, x = 0, y = 0, shape = NULL, color = NULL)
@@ -1454,17 +1485,20 @@ p1
 
 Determine what environmental variables best fit with PCA axis 1 and 2
 ```{r}
-fit_RDA <- envfit(RDA_hel_uncon, veg_physeq_hel_sd, permutations = 10000)
+fit_RDA <- envfit(RDA_hel_uncon, # ordination object
+                  veg_physeq_hel_sd, # environmental variables
+                  permutations = 10000)
 fit_RDA
 ```
 
-Temperature and Nitrite and Nitrate have the highest correlation and lowest P values.
+Temperature and Nitrite and Nitrate have the highest correlation and lowest P values. Only temperature has a p-value under 0.05.
 
 &nbsp;
 
 Perform RDA constrained on Temperature and Nitrite and Nitrate
 
 ```{r}
+# modified from https://github.com/joey711/phyloseq/issues/274#issuecomment-30553161
 # at least 2 variables required in formula
 RDA_hel <- ordinate(physeq_hel,
                     method = "RDA",
@@ -1486,6 +1520,7 @@ p = plot_ordination(
 # Add the environmental variables as arrows
 arrowmat = vegan::scores(RDA_hel, display = "bp")
 # Add labels, make a data.frame
+row.names(arrowmat) <- c("Temperature", "Nitrite and Nitrate")
 arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
 # Define the arrow aesthetic mapping
 arrow_map = aes(xend = RDA1, yend = RDA2, x = 0, y = 0, shape = NULL, color = NULL)
@@ -1535,6 +1570,7 @@ p = plot_ordination(
 # Add the environmental variables as arrows
 arrowmat = nmds_fit$df_arrows[,c("NMDS1","NMDS2")]
 # Add labels, make a data.frame
+row.names(arrowmat) <- c("Temperature", "Nitrite and Nitrate")
 arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
 # Define the arrow aesthetic mapping
 arrow_map = aes(xend = NMDS1, yend = NMDS2, x = 0, y = 0, shape = NULL, color = NULL)
@@ -1613,29 +1649,29 @@ Core taxa must be detected and present in all samples of a given group.
 Modified from https://microbiome.github.io/tutorials/core_venn.html
 
 ```{r}
-physeq_comp <- transform(physeq, "compositional")
+physeq_comp <- transform(physeq, "compositional") # transform to compositional, instead of absolute counts
 ```
 
 &nbsp;
 
 Core microbiome by Summer Stage at Order level
 ```{r}
-summer_stages <- unique(as.character(meta(physeq_comp)$Summer_Stage))
+summer_stages <- unique(as.character(meta(physeq_comp)$Summer_Stage)) # vector of summer stages
 
 physeq_comp_order <- physeq_comp %>%
-tax_glom(taxrank = "Order")
+tax_glom(taxrank = "Order") # agglomerate on Order level
 
-core_summer_stage_order <- c()
+core_summer_stage_order <- c() # empty vector to store core microbiome results
 
 for (n in summer_stages){
     ps_sub <- subset_samples(physeq_comp_order, Summer_Stage == n)
     core_m <- core_members(ps_sub,
-                   detection = 1/10000000,
-                   prevalence = 100/100, 
+                   detection = 1/10000000, # minimum detection rate
+                   prevalence = 100/100, # must be present in all samples
                    include.lowest = TRUE)
     
     print(paste0("No. of core Order taxa in ", n, " : ", length(core_m)))
-    core_summer_stage_order[[n]] <- core_m
+    core_summer_stage_order[[n]] <- core_m # add core microbiome to results
 }
 ```
 
@@ -1695,8 +1731,9 @@ for (n in lib_season){
 
 &nbsp;
 
+Plot Venn diagrams of core microbiome at Order, Family, and Genus levels
 ```{r fig.width=6, fig.height=12}
-
+# create venn diagram plots
 v1 <- plot(venn(core_summer_stage_order),
        fills = mycols,
        main = "Core Microbiome of Summer Stages at Order Level",
@@ -1716,14 +1753,17 @@ v3 <- plot(venn(core_summer_stage_genus),
        alpha = .7,
        labels = list(fontsize = 9))
 
-# arrange plots and add spacing between
+# arrange plots and add spacing between plots
 ggarrange(v1, NULL, v2, NULL, v3, 
           nrow = 5, 
           heights = c(1, 0.2, 1, 0.2, 1))
 ```
 
+Mid summer samples did not have any taxa unique solely to the mid summer.
+
 &nbsp;
 
+Plot core microbiome based on library seasons instead of summer stages
 ```{r fig.width=6, fig.height=3.6}
 plot(venn(core_lib_season_genus),
        fills = mycols,
@@ -1738,8 +1778,9 @@ At Order level, 31 taxa are shared between all groups.
 
 &nbsp;
 
-Core taxa names in Summer Stages
+Core taxa names in Summer Stages at Order level
 ```{r}
+# obtain taxa names for each core microbiome
 early_summer_core_order <- subset_samples(
                            physeq_comp_order, Summer_Stage == "Early Summer") %>%
                            core(detection = 1/10000000,
@@ -1904,7 +1945,7 @@ Oceanospirillales <- physeq_order %>%
     geom_point(size = 1.25, alpha = .75) +
     scale_x_date(date_breaks = "months", date_labels = "%b") + 
     labs(title = "Oceanospirillales", color = "Season", y = "% Abundance") +
-    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 4)) + 
     theme(axis.title.x = element_blank(), axis.title.y = element_blank())
 ```
 
@@ -2079,7 +2120,7 @@ Nitrincolaceae <- physeq_family %>%
     geom_point(size = 1.25, alpha = .75) +
     scale_x_date(date_breaks = "months", date_labels = "%b") + 
     labs(title = "Nitrincolaceae", color = "Season", y = "% Abundance") +
-    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) + 
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 4)) + 
     theme(axis.title.x = element_blank(), axis.title.y = element_blank())
 ```
 
