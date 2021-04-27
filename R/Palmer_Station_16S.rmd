@@ -1,10 +1,11 @@
 ---
 title: "Palmer Station 16S Analysis"
 author: "Codey Phoun"
-date: "4/06/2021"
+date: "4/27/2021"
 output:
-  pdf_document: default
+  word_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -21,14 +22,14 @@ phytoplankton bloom and changes in the community composition of the bacteria and
 microbes in the water. These microbes are the key players in the processes of biogeochemical
 cycling and carbon sequestration. The Southern Ocean has experienced dramatic warming due to
 the effects of anthropogenic climate change and the impact of climate change on the marine
-bacterial community is not fully understood. The Palmer Long Term Ecological Research (PAL LTER) project has been collecting ecological data on the WAP since 1990, but detailed molecular data on this ecosystem is under sampled. Baseline measurements on the taxonomic makeup of the microbial community are needed for future research. Water samples from the surface water of the Western Antarctic Peninsula were collected by Dr. Shellie Bench at Palmer
-Station, over the 2012-2013, 2013-2014, and 2014-2015 summer seasons. This project is focused on the 15 different 16S
-rRNA V4 amplicon libraries generated from the sequencing of these water samples. With this
+bacterial community is not fully understood. The Palmer Long Term Ecological Research (PAL LTER) project has been collecting ecological data on the WAP since 1990, but detailed molecular data on this ecosystem is under sampled. Baseline measurements on the taxonomic makeup of the microbial community are needed for future research. Water samples from the surface water of the Western Antarctic Peninsula were collected as part of Dr. Shellie Bench's project at Palmer
+Station, over the 2012-2013, 2013-2014, and 2014-2015 austral summer seasons. This project is focused on the 15 different 16S
+rRNA V4 amplicon libraries generated from the sequencing of microbes in these water samples. With this
 data, a metagenomic analysis can help reveal the pattern of changes in the community
 composition of bacteria that are associated to the phytoplankton blooms off the coast of the
 Western Antarctic Peninsula
 
-These 15 reads were previously processed on the SJSU CoS HPC. Quality filtering and primer and adapter removal was performed with Cutadapt. The samples were then imported into QIIME2 for further processing. The 16s libraries were run through DADA2 in QIIME2 to create amplicon sequence variants (ASVs) by denoising and dereplicating paired-end sequences before filtering for chimeras. ASVs were then taxonomically classified with VSEARCH and the SILVA-138 database. A phylogenetic tree was then created by IQ-TREE in QIIME2 for downstream analysis methods that required phylogentic information. 
+These 15 samples were previously processed on the SJSU CoS HPC. Quality filtering and primer and adapter removal was performed with Cutadapt. The samples were then imported into QIIME2 for further processing. The 16s libraries were run through DADA2 in QIIME2 to create amplicon sequence variants (ASVs) by denoising and dereplicating paired-end sequences before filtering for chimeras. ASVs were then taxonomically classified with VSEARCH and the SILVA-138 database. A phylogenetic tree was then created by IQ-TREE in QIIME2 for downstream analysis methods that required phylogenetic information. 
 
 ## Setup
 
@@ -577,7 +578,7 @@ chlor <- ggplot(chlorophyll,
                      pch = 18, size = 3.5, alpha = .85)
 ```
 
-```{r include=FALSE}
+```{r include=F}
 ggplot(subset(chlorophyll, lib_season %in% c("12-13")), 
     aes(x = Date, y = `Chlorophyll (mg/m³)`)) +
     geom_line(size = 1.05, alpha = 0.75) +
@@ -593,7 +594,7 @@ ggplot(subset(chlorophyll, lib_season %in% c("12-13")),
                aes(label = month_day), box.padding = .5, nudge_x = -2, nudge_y = 1)
 ```
 
-```{r include=FALSE}
+```{r include=F}
 ggplot(subset(chlorophyll, lib_season %in% c("13-14")), 
     aes(x = Date, y = `Chlorophyll (mg/m³)`)) +
     geom_line(size = 1.05, alpha = 0.75) +
@@ -609,7 +610,7 @@ ggplot(subset(chlorophyll, lib_season %in% c("13-14")),
                aes(label = month_day))
 ```
 
-```{r include=FALSE}
+```{r include=F}
 ggplot(subset(chlorophyll, lib_season %in% c("14-15")), 
     aes(x = Date, y = `Chlorophyll (mg/m³)`)) +
     geom_line(size = 1.05, alpha = 0.75) +
@@ -647,7 +648,7 @@ prim_prod <- ggplot(primary_production,
                          pch = 18, size = 3.5, alpha = .85)
 ```
 
-```{r include=FALSE}
+```{r include=F}
 ggplot(subset(primary_production, lib_season %in% c("12-13")), 
     aes(x = Date, y = `Primary Prod. (mg/m³/day)`)) +
     geom_line(size = 1.05, alpha = 0.75) +
@@ -663,7 +664,7 @@ ggplot(subset(primary_production, lib_season %in% c("12-13")),
                aes(label = month_day), box.padding = .5, nudge_x = -2, nudge_y = 1)
 ```
 
-```{r include=FALSE}
+```{r include=F}
 ggplot(subset(primary_production, lib_season %in% c("13-14")), 
     aes(x = Date, y = `Primary Prod. (mg/m³/day)`)) +
     geom_line(size = 1.05, alpha = 0.75) +
@@ -679,7 +680,7 @@ ggplot(subset(primary_production, lib_season %in% c("13-14")),
                aes(label = month_day))
 ```
 
-```{r include=FALSE}
+```{r include=F}
 ggplot(subset(primary_production, lib_season %in% c("14-15")), 
     aes(x = Date, y = `Primary Prod. (mg/m³/day)`)) +
     geom_line(size = 1.05, alpha = 0.75) +
@@ -944,6 +945,7 @@ that may have been missed due to undersampling (richness estimate)
 Shannon Diversity:
 
 Estimator of species richness and species evenness: more weight on species richness
+\
 Measures the average degree of uncertainty in predicting where individual species chosen at random will belong
 
 &nbsp;
@@ -951,7 +953,9 @@ Measures the average degree of uncertainty in predicting where individual specie
 Inverse Simpson:
 
 Estimator of species richness and species evenness:  more weight on species evenness
+\
 Takes into account both species richness, and an evenness of abundance among the species present
+\
 Measures the probability that two individuals randomly selected from an area will belong to the same species
 
 Alpha diversity descriptions from:
@@ -1423,7 +1427,7 @@ physeq_to_vegan_otu <- function(physeq_otu) {
 
 &nbsp;
 
-Perform Hellinger transformation on rarefied data. Euclidiean distance is required for linear methods like principal component analysis (PCA) and redundancy analysis (RDA).
+Perform Hellinger transformation on rarefied data. Euclidean distance is required for linear methods like principal component analysis (PCA) and redundancy analysis (RDA).
 
 ```{r}
 physeq_hel <- transform(physeq_rarefy, transform = "hellinger")
@@ -1536,7 +1540,46 @@ p1
 RDA_hel
 ```
 
-About 30% of the variance can be explained by Temperatrue and Nitrite and Nitrate
+About 30% of the variance can be explained by Temperature and Nitrite and Nitrate
+
+Perform RDA constrained on Temperature, Nitrite and Nitrate, and Salinity
+```{r}
+
+RDA_hel <- ordinate(physeq_hel,
+                    method = "RDA",
+                    formula = ~ Temperature + Nitrite.and.Nitrate + Salinity)
+
+p = plot_ordination(
+        physeq_hel,
+        ordination = RDA_hel,
+        type = "samples",
+        color ="Summer_Stage",
+        shape = "lib_season") +
+        ggtitle("RDA - Constrained on Temperature, Nitrite and Nitrate, and Salinity") + 
+        geom_point(size = 2.5) +
+        geom_text_repel(aes(label = as.character(lib_dates)), size = 2.5) +
+        labs(color = "Summer Stage", shape = "Season") +
+        scale_x_continuous(limits = c(-1.5,1.5)) +
+        scale_y_continuous(limits = c(-1.5,1.5))
+
+# Add the environmental variables as arrows
+arrowmat = vegan::scores(RDA_hel, display = "bp")
+# Add labels, make a data.frame
+row.names(arrowmat) <- c("Temperature", "Nitrite and Nitrate", "Salinity")
+arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
+# Define the arrow aesthetic mapping
+arrow_map = aes(xend = RDA1, yend = RDA2, x = 0, y = 0, shape = NULL, color = NULL)
+label_map = aes(x = RDA1*1.2, y = RDA2*1.2, shape = NULL, color = NULL, label = labels)
+arrowhead = arrow(length = unit(0.05, "npc"))
+p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
+    geom_text(label_map, size = 3, data = arrowdf) #+ 
+    #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
+p1
+```
+```{r}
+RDA_hel
+```
+About 36% of the variance can be explained by Temperature, Nitrite and Nitrate, and Salinity
 
 &nbsp;
 
@@ -1776,11 +1819,13 @@ Both summer stages and library seasons share a core of 62 taxa at Genus level.
 
 At Order level, 31 taxa are shared between all groups.
 
+Note, if two different ASVs are considered 
+
 &nbsp;
 
 Core taxa names in Summer Stages at Order level
+
 ```{r}
-# obtain taxa names for each core microbiome
 early_summer_core_order <- subset_samples(
                            physeq_comp_order, Summer_Stage == "Early Summer") %>%
                            core(detection = 1/10000000,
@@ -1806,37 +1851,104 @@ late_summer_core_order <- subset_samples(
 late_summer_core_order <- as.vector(late_summer_core_order[,"Order"])
 ```
 
+
+```{r}
+core_summer_stages_order_taxa <- c()
+
+for (n in summer_stages){
+    core_m <- subset_samples(physeq_comp_order, Summer_Stage == n) %>%
+    core(detection = 1/10000000,
+         prevalence = 100/100, 
+         include.lowest = TRUE) %>%
+         tax_table()
+    core_m <- as.vector(core_m[,"Order"])
+    core_summer_stages_order_taxa[[n]] <- core_m
+}
+```
+
+
 31 core taxa at Order level
 ```{r}
-Reduce(intersect, list(early_summer_core_order, 
-                       mid_summer_core_order,
-                       late_summer_core_order))
+Reduce(intersect, list(core_summer_stages_order_taxa$`Early Summer`, 
+                       core_summer_stages_order_taxa$`Mid Summer`,
+                       core_summer_stages_order_taxa$`Late Summer`))
 ```
 
 Core taxa unique to Early Summer and Late Summer only
 
 ```{r}
-setdiff(intersect(early_summer_core_order, late_summer_core_order), mid_summer_core_order)
+setdiff(intersect(core_summer_stages_order_taxa$`Early Summer`, core_summer_stages_order_taxa$`Late Summer`), core_summer_stages_order_taxa$`Mid Summer`)
 ```
 
 Core taxa unique to Mid Summer and Late Summer only
 
 ```{r}
-setdiff(intersect(mid_summer_core_order, late_summer_core_order), early_summer_core_order)
+setdiff(intersect(core_summer_stages_order_taxa$`Mid Summer`, core_summer_stages_order_taxa$`Late Summer`), core_summer_stages_order_taxa$`Early Summer`)
 ```
 
 Core taxa unique to Early Summer only
 
 ```{r}
-setdiff(setdiff(early_summer_core_order, late_summer_core_order), mid_summer_core_order)
+setdiff(setdiff(core_summer_stages_order_taxa$`Early Summer`, core_summer_stages_order_taxa$`Late Summer`), core_summer_stages_order_taxa$`Mid Summer`)
 ```
 
 Core taxa unique to Late Summer only
 
 ```{r}
-setdiff(setdiff(late_summer_core_order, early_summer_core_order), mid_summer_core_order)
+setdiff(setdiff(core_summer_stages_order_taxa$`Late Summer`, core_summer_stages_order_taxa$`Early Summer`), core_summer_stages_order_taxa$`Mid Summer`)
 ```
 
+Core taxa names in Library Seasons at Genus level
+
+```{r}
+core_lib_season_genus_taxa <- c()
+
+for (n in lib_season){
+    ps_sub <- subset_samples(physeq_comp, lib_season == n)
+    core_m <- core(ps_sub,
+                   detection = 1/10000000,
+                   prevalence = 100/100, 
+                   include.lowest = TRUE) %>%
+                   tax_table()
+    core_m <- as.vector(core_m[,"Genus"])
+    core_lib_season_genus_taxa[[n]] <- core_m
+}
+```
+
+```{r}
+core_lib_season <- Reduce(intersect, list(core_lib_season_genus_taxa$`12-13`, 
+                       core_lib_season_genus_taxa$`13-14`,
+                       core_lib_season_genus_taxa$`14-15`))
+core_lib_season
+```
+
+```{r}
+core_summer_stages_genus_taxa <- c()
+
+for (n in summer_stages){
+    ps_sub <- subset_samples(physeq_comp, Summer_Stage == n)
+    core_m <- core(ps_sub,
+                   detection = 1/10000000,
+                   prevalence = 100/100, 
+                   include.lowest = TRUE) %>%
+                   tax_table()
+    core_m <- as.vector(core_m[,"Genus"])
+    core_summer_stages_genus_taxa[[n]] <- core_m
+}
+```
+
+```{r}
+core_summer_stage <- Reduce(intersect, list(core_summer_stages_genus_taxa$`Early Summer`, 
+                       core_summer_stages_genus_taxa$`Mid Summer`,
+                       core_summer_stages_genus_taxa$`Late Summer`))
+core_summer_stage
+```
+
+At genus level, the core taxa in all summer stages is the same as teh core taxa in all library seasons.
+
+Note: There are 62 unique ASVs at the genus level shown in the Venn diagrams, but only 53 unique taxa names are shown with the intersection between all summer stages or library seasons. This is due to the presence of "uncultured" taxa being counted together as one. 
+
+&nbsp;
 
 ### Top 10 taxa at Order, Family, and Genus levels by Proportion
 
@@ -2244,7 +2356,6 @@ annotate_figure(top_10_family_plot,
                 left = text_grob("% Abundance", rot = 90, size = 14),
                 top = text_grob("Top 10 Taxa by Abundance at Family Level", size = 16))
 ```
-
 
 ```{r}
 sessionInfo()
