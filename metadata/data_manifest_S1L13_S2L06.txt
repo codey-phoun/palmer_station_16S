@@ -1,3 +1,0 @@
-sample-id	forward-absolute-filepath	reverse-absolute-filepath
-S1L13	/home/cphoun/palmer_station/trimmed/Nov16s_1_s_1i13_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/Nov16s_1_s_1i13_2_trimmed.fastq
-S2L06	/home/cphoun/palmer_station/trimmed/0114-16s_1_trimmed.fastq	/home/cphoun/palmer_station/trimmed/0114-16s_2_trimmed.fastq
