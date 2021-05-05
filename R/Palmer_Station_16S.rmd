@@ -1,11 +1,11 @@
 ---
 title: "Palmer Station 16S Analysis"
 author: "Codey Phoun"
-date: "4/27/2021"
+date: "5/05/2021"
 output:
+  pdf_document: default
   word_document: default
   html_document: default
-  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -29,7 +29,7 @@ data, a metagenomic analysis can help reveal the pattern of changes in the commu
 composition of bacteria that are associated to the phytoplankton blooms off the coast of the
 Western Antarctic Peninsula
 
-These 15 samples were previously processed on the SJSU CoS HPC. Quality filtering and primer and adapter removal was performed with Cutadapt. The samples were then imported into QIIME2 for further processing. The 16s libraries were run through DADA2 in QIIME2 to create amplicon sequence variants (ASVs) by denoising and dereplicating paired-end sequences before filtering for chimeras. ASVs were then taxonomically classified with VSEARCH and the SILVA-138 database. A phylogenetic tree was then created by IQ-TREE in QIIME2 for downstream analysis methods that required phylogenetic information. 
+These 15 samples were previously processed on the SJSU CoS HPC. Quality filtering and primer and adapter removal was performed with Cutadapt. The samples were then imported into QIIME2 for further processing. The 16S libraries were run through DADA2 in QIIME2 to create amplicon sequence variants (ASVs) by denoising and dereplicating paired-end sequences before filtering for chimeras. ASVs were then taxonomically classified with VSEARCH and the SILVA-138 database. A phylogenetic tree was then created by IQ-TREE in QIIME2 for downstream analysis methods that required phylogenetic information. 
 
 ## Setup
 
@@ -547,7 +547,7 @@ ggplot(subset(bacterial_abundance, lib_season %in% c("14-15")),
 
 ### Bacterial Abundance and Production
 
-Diamonds indicates a 16s sample date
+Diamonds indicate a 16S sample date
 
 ```{r warning=FALSE}
 ggarrange(bac_abund, 
@@ -555,7 +555,8 @@ ggarrange(bac_abund,
           ncol = 1, 
           common.legend = TRUE, 
           legend = "bottom",
-          align = "v")
+          align = "v",
+          labels = c("A", "B"))
 ```
 
 Chlorophyll
@@ -704,7 +705,8 @@ ggarrange(chlor,
           ncol = 1, 
           common.legend = TRUE, 
           legend = "bottom",
-          align = "v")
+          align = "v",
+          labels = c("A", "B"))
 ```
 
 Water Temperature
@@ -851,7 +853,8 @@ ggarrange(temp,
           ncol = 1, 
           common.legend = TRUE, 
           legend = "bottom",
-          align = "v")
+          align = "v",
+          labels = c("A", "B"))
 ```
 
 Phosphate
@@ -865,7 +868,7 @@ phos <- ggplot(na.omit(inorganic_nutrients),
           scale_x_date(date_breaks = "months", date_labels = "%b",
                        limits = as.Date(c('2000-10-31','2001-03-25')), 
                        expand = c(0,0)) + 
-          labs(title = "Inorganic Nutrients - Phosphate", x ="Month", color = "Season") +
+          labs(title = "Phosphate", x ="Month", color = "Season") +
           scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
           theme(axis.title.y = element_text(margin = margin(r = 15)),
                 axis.title.x = element_blank()) +
@@ -885,7 +888,7 @@ sil <- ggplot(inorganic_nutrients,
         scale_x_date(date_breaks = "months", date_labels = "%b",
                      limits = as.Date(c('2000-10-31','2001-03-25')), 
                      expand = c(0,0)) + 
-        labs(title = "Inorganic Nutrients - Silicate", x ="Month", color = "Season") +
+        labs(title = "Silicate", x ="Month", color = "Season") +
         scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
         theme(axis.title.y = element_text(margin = margin(r = 15)),
               axis.title.x = element_blank()) +
@@ -905,7 +908,7 @@ nn <- ggplot(inorganic_nutrients,
         scale_x_date(date_breaks = "months", date_labels = "%b",
                      limits = as.Date(c('2000-10-31','2001-03-25')), 
                      expand = c(0,0)) + 
-        labs(title = "Inorganic Nutrients - Nitrite and Nitrate", x ="Month", color = "Season") +
+        labs(title = "Nitrite and Nitrate", x ="Month", color = "Season") +
         scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
         theme(axis.title.y = element_text(margin = margin(r = 15)),
               axis.title.x = element_blank()) +
@@ -915,14 +918,15 @@ nn <- ggplot(inorganic_nutrients,
 ```
 
 ### Inorganic Nutrients: Phosphate, Silicate, and Nitrite and Nitrate
-```{r warning=FALSE}
+```{r warning=FALSE, fig.height=8, fig.width=6}
 ggarrange(phos, 
           sil,
           nn,
           ncol = 1, 
           common.legend = TRUE, 
           legend = "bottom",
-          align = "v")
+          align = "v",
+          labels = c("A", "B", "C"))
 ```
 
 &nbsp;
@@ -988,7 +992,8 @@ plot_richness(physeq_rarefy, measures = c("Observed", "Chao1", "Shannon", "InvSi
               nrow = 4, color = "Summer_Stage") +
 theme(axis.text.x = element_text(angle = 60, face = "plain", hjust = .5, vjust = .5, size = 10,)) +
 scale_x_discrete(labels = lib_dates) + 
-labs(color = "Summer Stage")
+labs(color = "Summer Stage") +
+xlab("")
 ```
 
 The different alpha diversity measures shows (mostly) the same pattern across the samples.
@@ -1190,7 +1195,7 @@ treemap(physeq_order_other,
         lowerbound.cex.labels = .5,
         border.lwds = c(2, 1),
         palette = "Pastel1",
-        title = "Overall Composition of 16s Reads by Class and Order"
+        title = "Overall Composition of 16S Reads by Class and Order"
         )
 ```
 
@@ -1214,7 +1219,7 @@ physeq_other <- physeq %>%
 colourCount = length(unique(physeq_other$Taxa_Order)) # obtain number of colors needed
 getPalette = colorRampPalette(brewer.pal(9, "Set1")) # create palette with Set1
 
-ggplot(data=physeq_other, 
+phylum_class_BP <- ggplot(data=physeq_other, 
        aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), # order by date for each library season
            y=Abundance, 
            fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) + # order taxa within bars by abundance
@@ -1232,9 +1237,9 @@ facet_grid(~lib_season, # draw facets by library seasons
 theme(legend.direction="vertical", 
       axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold", size = 10),
       axis.title.x=element_blank(),
-      axis.text.y = element_text(face = "bold", size = 10)) +
-labs(title = "Relative Frequency of Taxa by Phylum and Class for Each Season", 
-     caption = "'Other' taxa contribute < 1% to relative abundance",
+      axis.text.y = element_text(face = "bold", size = 10),
+      plot.margin = unit(c(0,0,0,0), "cm")) +
+labs(title = "Relative Frequency by Phylum and Class", 
      y = "Relative Frequency %",
      fill = "Phylum;Class")
 ```
@@ -1242,20 +1247,61 @@ labs(title = "Relative Frequency of Taxa by Phylum and Class for Each Season",
 &nbsp;
 
 Relative Frequency by Class and Order
-```{r fig.width=8, fig.height=5}
+```{r fig.width=8, fig.height=5, include=FALSE}
 physeq_other <- physeq %>%
   tax_glom(taxrank = "Order") %>%   
   transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
   psmelt() %>%
   unite(Taxa_Order, Class:Order, sep = ";") %>%
-  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other")) %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 2, "Other")) %>%
   mutate(Taxa_Order = factor(Taxa_Order)) %>%
   unite("month_day", month:day, sep = "-")
 
 colourCount = length(unique(physeq_other$Taxa_Order))
 getPalette = colorRampPalette(brewer.pal(9, "Set1"))
 
-ggplot(data=physeq_other, 
+class_order_BP <- ggplot(data=physeq_other, 
+  aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
+     y=Abundance, 
+     fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
+  geom_bar(stat="identity", 
+           position = position_stack(reverse = TRUE), 
+           width = 0.95) + 
+  scale_fill_manual(values=getPalette(colourCount), 
+                    guide = guide_legend(reverse=TRUE)) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
+                     expand = c(0,0)) +
+  scale_x_reordered() +
+  facet_grid(~lib_season, 
+             scales = "free_x", 
+             space = "free_x") +
+  theme(legend.direction="vertical", 
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust=1, face = "bold", size = 10),
+        axis.title.x=element_blank(),
+        axis.text.y = element_text(face = "bold", size = 10),
+        plot.margin = unit(c(0,0,0,0), "cm")) +
+  labs(title = "Relative Frequency by Class and Order",
+       y = "Relative Frequency %",
+       fill = "Class;Order")
+```
+
+&nbsp;
+
+Relative Frequency by Order
+```{r fig.width=8, fig.height=5}
+physeq_other <- physeq %>%
+  tax_glom(taxrank = "Order") %>%   
+  transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
+  psmelt() %>%
+  mutate(Taxa_Order = Order) %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 2, "Other")) %>%
+  mutate(Taxa_Order = factor(Taxa_Order)) %>%
+  unite("month_day", month:day, sep = "-")
+
+colourCount = length(unique(physeq_other$Taxa_Order))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+order_BP <- ggplot(data=physeq_other, 
        aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
            y=Abundance, 
            fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
@@ -1263,7 +1309,7 @@ geom_bar(stat="identity",
          position = position_stack(reverse = TRUE), 
          width = 0.95) + 
 scale_fill_manual(values=getPalette(colourCount), 
-                  guide = guide_legend(reverse=TRUE)) + 
+                  guide = guide_legend(reverse = TRUE, ncol = 2)) + 
 scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
                    expand = c(0,0)) +
 scale_x_reordered() +
@@ -1271,16 +1317,16 @@ facet_grid(~lib_season,
            scales = "free_x", 
            space = "free_x") +
 theme(legend.direction="vertical", 
-      axis.text.x = element_text(angle = 45, hjust = 1, vjust=1, face = "bold", size = 10),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold", size = 10),
       axis.title.x=element_blank(),
-      axis.text.y = element_text(face = "bold", size = 10)) +
-labs(title = "Relative Frequency of Taxa by Class and Order for Each Season", 
-     caption = "'Other' taxa contribute < 1% to relative abundance",
+      axis.text.y = element_text(face = "bold", size = 10),
+      plot.margin = unit(c(0,0,0,0), "cm")) +
+labs(title = "Relative Frequency by Order",
      y = "Relative Frequency %",
-     fill = "Class;Order")
+     fill = "Order")
 ```
 
-&nbsp;
+
 
 Relative Frequency by Family
 ```{r fig.width=8, fig.height=5}
@@ -1288,16 +1334,15 @@ physeq_other <- physeq %>%
   tax_glom(taxrank = "Family") %>%   
   transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
   psmelt() %>%
-  #unite(Taxa_Order, Order:Family, sep = ";") %>%
   mutate(Taxa_Order = Family) %>%
-  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other")) %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 2, "Other")) %>%
   mutate(Taxa_Order = factor(Taxa_Order)) %>%
   unite("month_day", month:day, sep = "-")
 
 colourCount = length(unique(physeq_other$Taxa_Order))
 getPalette = colorRampPalette(brewer.pal(9, "Set1"))
 
-ggplot(data=physeq_other, 
+family_BP <- ggplot(data=physeq_other, 
        aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
            y=Abundance, 
            fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
@@ -1305,7 +1350,7 @@ geom_bar(stat="identity",
          position = position_stack(reverse = TRUE), 
          width = 0.95) + 
 scale_fill_manual(values=getPalette(colourCount), 
-                  guide = guide_legend(reverse=TRUE)) + 
+                  guide = guide_legend(reverse=TRUE, ncol=2)) + 
 scale_y_continuous(breaks = scales::pretty_breaks(n = 10), 
                    expand = c(0,0)) +
 scale_x_reordered() +
@@ -1313,11 +1358,11 @@ facet_grid(~lib_season,
            scales = "free_x", 
            space = "free_x") +
 theme(legend.direction="vertical", 
-      axis.text.x = element_text(angle = 45, hjust = 1, vjust=1, face = "bold", size = 10),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold", size = 10),
       axis.title.x=element_blank(),
-      axis.text.y = element_text(face = "bold", size = 10)) +
-labs(title = "Relative Frequency of Taxa Family for Each Season", 
-     caption = "'Other' taxa contribute < 1% to relative abundance",
+      axis.text.y = element_text(face = "bold", size = 10),
+      plot.margin = unit(c(0,0,0,0), "cm")) +
+labs(title = "Relative Frequency by Family",
      y = "Relative Frequency %",
      fill = "Family")
 ```
@@ -1330,7 +1375,7 @@ physeq_other <- physeq %>%
   transform_sample_counts(function(x) {100 * x/sum(x)}) %>%
   psmelt() %>%
   mutate(Taxa_Order = Genus) %>%
-  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 1, "Other or Uncultured")) %>%
+  mutate(Taxa_Order = replace(Taxa_Order, Abundance < 2, "Other or Uncultured")) %>%
   mutate(Taxa_Order = replace(Taxa_Order, Taxa_Order == "uncultured", "Other or Uncultured")) %>%
   mutate(Taxa_Order = factor(Taxa_Order)) %>%
   unite("month_day", month:day, sep = "-")
@@ -1338,7 +1383,7 @@ physeq_other <- physeq %>%
 colourCount = length(unique(physeq_other$Taxa_Order))
 getPalette = colorRampPalette(brewer.pal(9, "Set1"))
 
-ggplot(data=physeq_other, 
+genus_BP <- ggplot(data=physeq_other, 
        aes(x=reorder_within(month_day, as.Date(as.character(lib_date),"%m/%d/%Y"), lib_season), 
            y=Abundance, 
            fill=fct_reorder(Taxa_Order, Abundance, .desc = TRUE))) +
@@ -1356,12 +1401,27 @@ facet_grid(~lib_season,
 theme(legend.direction="vertical", 
       axis.text.x = element_text(angle = 45, hjust = 1, vjust=1, face = "bold", size = 10),
       axis.title.x=element_blank(),
-      axis.text.y = element_text(face = "bold", size = 10)) +
-labs(title = "Relative Frequency of Taxa by Genus for Each Season", 
-     caption = "'Other' taxa contribute < 1% to relative abundance",
+      axis.text.y = element_text(face = "bold", size = 10),
+      plot.margin = unit(c(0,0,0,0), "cm")) +
+labs(title = "Relative Frequency by Genus", 
+     caption = "'Other' taxa contribute < 2% to relative abundance",
      y = "Relative Frequency %",
      fill = "Genus")
 ```
+
+Draw all relative frequency bar plots
+```{r fig.width=8, fig.height=11}
+ggarrange(phylum_class_BP,
+          order_BP,
+          family_BP,
+          genus_BP,
+          ncol = 1,
+          align = "hv",
+          legend = "right",
+          labels = c("A", "B", "C", "D")
+          )
+```
+
 
 &nbsp;
 
@@ -1484,7 +1544,6 @@ arrowhead = arrow(length = unit(0.05, "npc"))
 p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead, alpha = 0.75) + 
     geom_text(label_map, size = 3, data = arrowdf) #+ 
     #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
-p1
 ```
 
 Determine what environmental variables best fit with PCA axis 1 and 2
@@ -1514,7 +1573,7 @@ p = plot_ordination(
         type = "samples",
         color ="Summer_Stage",
         shape = "lib_season") +
-        ggtitle("RDA - Constrained on Temperature and Nitrite and Nitrate") + 
+        ggtitle("RDA") + 
         geom_point(size = 2.5) +
         geom_text_repel(aes(label = as.character(lib_dates)), size = 2.5) +
         labs(color = "Summer Stage", shape = "Season") +
@@ -1530,10 +1589,10 @@ arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
 arrow_map = aes(xend = RDA1, yend = RDA2, x = 0, y = 0, shape = NULL, color = NULL)
 label_map = aes(x = RDA1*1.2, y = RDA2*1.2, shape = NULL, color = NULL, label = labels)
 arrowhead = arrow(length = unit(0.05, "npc"))
-p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
+p2 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
     geom_text(label_map, size = 3, data = arrowdf) #+ 
     #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
-p1
+p2
 ```
 
 ```{r}
@@ -1555,7 +1614,7 @@ p = plot_ordination(
         type = "samples",
         color ="Summer_Stage",
         shape = "lib_season") +
-        ggtitle("RDA - Constrained on Temperature, Nitrite and Nitrate, and Salinity") + 
+        ggtitle("RDA") + 
         geom_point(size = 2.5) +
         geom_text_repel(aes(label = as.character(lib_dates)), size = 2.5) +
         labs(color = "Summer Stage", shape = "Season") +
@@ -1571,11 +1630,11 @@ arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
 arrow_map = aes(xend = RDA1, yend = RDA2, x = 0, y = 0, shape = NULL, color = NULL)
 label_map = aes(x = RDA1*1.2, y = RDA2*1.2, shape = NULL, color = NULL, label = labels)
 arrowhead = arrow(length = unit(0.05, "npc"))
-p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
+p3 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
     geom_text(label_map, size = 3, data = arrowdf) #+ 
     #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
-p1
 ```
+
 ```{r}
 RDA_hel
 ```
@@ -1605,7 +1664,7 @@ p = plot_ordination(
         type = "samples",
         color ="Summer_Stage",
         shape = "lib_season") +
-        ggtitle("NMDS on Weighed Unifrac Distance Fit with Environmental Variables") + 
+        ggtitle("NMDS") + 
         geom_point(size = 2.5) +
         geom_text_repel(aes(label = as.character(lib_dates)), size = 2.5) +
         labs(color = "Summer Stage", shape = "Season")
@@ -1613,16 +1672,15 @@ p = plot_ordination(
 # Add the environmental variables as arrows
 arrowmat = nmds_fit$df_arrows[,c("NMDS1","NMDS2")]
 # Add labels, make a data.frame
-row.names(arrowmat) <- c("Temperature", "Nitrite and Nitrate")
+row.names(arrowmat) <- c("Nitrite and Nitrate","Temperature")
 arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
 # Define the arrow aesthetic mapping
 arrow_map = aes(xend = NMDS1, yend = NMDS2, x = 0, y = 0, shape = NULL, color = NULL)
 label_map = aes(x = NMDS1*1.1, y = NMDS2*1.1, shape = NULL, color = NULL, label = labels)
 arrowhead = arrow(length = unit(0.05, "npc"))
-p1 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
+p4 = p + geom_segment(arrow_map, size = 1, data = arrowdf, color = "gray", arrow = arrowhead) + 
     geom_text(label_map, size = 3, data = arrowdf)# + 
     #stat_ellipse(aes(group = physeq_hel@sam_data$Summer_Stage), linetype = 2, level = .95)
-p1
 ```
 
 ```{r}
@@ -1631,6 +1689,17 @@ fit_NMDS
 ```
 
 NMDS results are similar to the RDA results. Stress of value of ~ 0.0336 indicates a high goodness of fit, or that the NMDS is a good representation, in reduced dimensions, of the original distance matrix. 
+
+
+```{r fig.width=6.5, fig.height=10}
+ggarrange(p1,p4,p3,
+          common.legend = T,
+          ncol=1,
+          legend = "right",
+          align = "hv",
+          labels = c("A","B","C"))
+```
+
 
 &nbsp;
 
@@ -1799,7 +1868,9 @@ v3 <- plot(venn(core_summer_stage_genus),
 # arrange plots and add spacing between plots
 ggarrange(v1, NULL, v2, NULL, v3, 
           nrow = 5, 
-          heights = c(1, 0.2, 1, 0.2, 1))
+          heights = c(1, 0.2, 1, 0.2, 1),
+          labels = c("A","","B","","C"),
+          label.y = .9)
 ```
 
 Mid summer samples did not have any taxa unique solely to the mid summer.
@@ -1818,8 +1889,6 @@ plot(venn(core_lib_season_genus),
 Both summer stages and library seasons share a core of 62 taxa at Genus level.
 
 At Order level, 31 taxa are shared between all groups.
-
-Note, if two different ASVs are considered 
 
 &nbsp;
 
@@ -1944,7 +2013,7 @@ core_summer_stage <- Reduce(intersect, list(core_summer_stages_genus_taxa$`Early
 core_summer_stage
 ```
 
-At genus level, the core taxa in all summer stages is the same as teh core taxa in all library seasons.
+At genus level, the core taxa in all summer stages is the same as the core taxa in all library seasons.
 
 Note: There are 62 unique ASVs at the genus level shown in the Venn diagrams, but only 53 unique taxa names are shown with the intersection between all summer stages or library seasons. This is due to the presence of "uncultured" taxa being counted together as one. 
 
@@ -2159,7 +2228,7 @@ SAR11 <- physeq_order %>%
     theme(axis.title.x = element_blank(), axis.title.y = element_blank())
 ```
 
-```{r fig.width=12, fig.height=12}
+```{r fig.width=8, fig.height=10}
 top_10_order_plot <- ggarrange(
   Flavobacteriales,			
   Rhodobacterales,		
@@ -2334,7 +2403,7 @@ NS9_marine_group <- physeq_family %>%
     theme(axis.title.x = element_blank(), axis.title.y = element_blank())
 ```
 
-```{r fig.width=12, fig.height=12}
+```{r fig.width=8, fig.height=10}
 top_10_family_plot <- ggarrange(
   Flavobacteriaceae,
   Rhodobacteraceae,
